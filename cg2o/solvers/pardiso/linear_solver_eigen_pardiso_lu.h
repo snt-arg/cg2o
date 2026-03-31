@@ -1,0 +1,144 @@
+#ifndef G2O_LINEAR_SOLVER_EIGEN_PARDISO_LU_H
+#define G2O_LINEAR_SOLVER_EIGEN_PARDISO_LU_H
+
+#include <Eigen/PardisoSupport>
+#include <Eigen/Sparse>
+#include <Eigen/src/Core/products/Parallelizer.h>
+#include <cassert>
+
+#include "g2o/core/batch_stats.h"
+#include "g2o/core/linear_solver.h"
+#include "g2o/core/marginal_covariance_cholesky.h"
+#include "g2o/stuff/logger.h"
+#include "g2o/stuff/timeutil.h"
+#include <mkl.h>
+#include <omp.h>
+
+namespace cg2o {
+
+/**
+ * \brief Linear solver using PardisoLU (Intel MKL) from Eigen
+ *
+ * Implements a robust linear solver using Eigen's PardisoLU decomposition.
+ */
+template <typename MatrixType>
+class LinearSolverEigenPardisoLU : public g2o::LinearSolverCCS<MatrixType> {
+public:
+  typedef Eigen::SparseMatrix<double, Eigen::ColMajor> SparseMatrix;
+  typedef Eigen::Triplet<double> Triplet;
+
+  using PardisoLUDecomposition = Eigen::PardisoLU<SparseMatrix>;
+
+public:
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  LinearSolverEigenPardisoLU()
+      : g2o::LinearSolverCCS<MatrixType>(), _init(true) {}
+
+  virtual bool init() override {
+    _init = true;
+    return true;
+  }
+
+  virtual bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+                     double *b) override {
+    using namespace g2o;
+    double t;
+    if (!computePardisoLU(A, t))
+      return false;
+
+    // Solve linear system using PardisoLU
+    VectorX::MapType xx(x, _sparseMatrix.cols());
+    VectorX::ConstMapType bb(b, _sparseMatrix.cols());
+    xx = _pardisoLU.solve(bb);
+
+    if (_pardisoLU.info() != Eigen::Success) {
+      G2O_ERROR("PardisoLU solve failed.");
+      return false;
+    }
+
+    // Collect statistics
+    G2OBatchStatistics *globalStats = G2OBatchStatistics::globalStats();
+    if (globalStats) {
+      globalStats->timeNumericDecomposition = get_monotonic_time() - t;
+      globalStats->choleskyNNZ = 0;
+    }
+
+    return true;
+  }
+
+protected:
+  bool _init;
+  SparseMatrix _sparseMatrix;
+  PardisoLUDecomposition _pardisoLU;
+
+  // Compute PardisoLU decomposition
+  bool computePardisoLU(const g2o::SparseBlockMatrix<MatrixType> &A, double &t) {
+    // Resize matrix if needed
+    if (_init)
+      _sparseMatrix.resize(A.rows(), A.cols());
+    fillSparseMatrix(A, !_init);
+    if (_init)
+      computeSymbolicDecomposition();
+    _init = false;
+
+    t = g2o::get_monotonic_time();
+
+    // Compute LU decomposition
+    _pardisoLU.factorize(_sparseMatrix.selfadjointView<Eigen::Upper>());
+
+    if (_pardisoLU.info() != Eigen::Success) {
+      G2O_ERROR("PardisoLU decomposition failed.");
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Compute the symbolic decomposition of the matrix only once.
+   * Since A has the same pattern in all the iterations, we only
+   * compute the fill-in reducing ordering once and re-use for all
+   * the following iterations.
+   */
+  void computeSymbolicDecomposition() {
+    using namespace g2o;
+    double t = get_monotonic_time();
+    _pardisoLU.analyzePattern(_sparseMatrix.selfadjointView<Eigen::Upper>());
+    _init = false; // Mark as initialized
+
+    G2OBatchStatistics *globalStats = G2OBatchStatistics::globalStats();
+    if (globalStats)
+      globalStats->timeSymbolicDecomposition = get_monotonic_time() - t;
+  }
+
+  // Fill the sparse matrix with values from A
+  void fillSparseMatrix(const g2o::SparseBlockMatrix<MatrixType> &A,
+                        bool onlyValues) {
+    if (onlyValues) {
+      this->_ccsMatrix->fillCCS(_sparseMatrix.valuePtr(), true);
+      return;
+    }
+    this->initMatrixStructure(A);
+    _sparseMatrix.resizeNonZeros(A.nonZeros());
+    int nz = this->_ccsMatrix->fillCCS(_sparseMatrix.outerIndexPtr(),
+                                       _sparseMatrix.innerIndexPtr(),
+                                       _sparseMatrix.valuePtr(), true);
+    (void)nz;
+    assert(nz <= static_cast<int>(_sparseMatrix.data().size()));
+  }
+
+  virtual bool solveBlocks_impl(
+      const g2o::SparseBlockMatrix<MatrixType> &A,
+      std::function<void(g2o::MarginalCovarianceCholesky &)> /*compute*/) override {
+    double t;
+    if (!computePardisoLU(A, t))
+      return false;
+
+    g2o::MarginalCovarianceCholesky mcc;
+    return true;
+  }
+};
+
+} // namespace cg2o
+
+#endif // G2O_LINEAR_SOLVER_EIGEN_PARDISO_LU_H
