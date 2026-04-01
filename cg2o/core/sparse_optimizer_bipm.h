@@ -27,7 +27,6 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
-
 #ifndef G2O_GRAPH_OPTIMIZER_BIPM_H
 #define G2O_GRAPH_OPTIMIZER_BIPM_H
 
@@ -48,7 +47,7 @@ class BaseFixedSizedEdgeIneq;
 template <int D, typename E, typename... VertexTypes>
 class BaseFixedSizedEdgeEq;
 
-// Specialized optimizer inheriting from SparseOptimizer
+// Specialized optimizer inheriting from SparseOptimizerForConstraints
 class G2O_CORE_API SparseOptimizerBIPM
     : public SparseOptimizerForConstraints<SparseOptimizerBIPM> {
   /**
@@ -119,6 +118,7 @@ public:
   template <int D, typename E, typename... VertexTypes>
   void constructQuadraticFormIneq(
       BaseFixedSizedEdgeIneq<D, E, VertexTypes...> &edge);
+
   // Function to construct the quadratic form implementation for Augmented
   // Lagrangian Eqaulity Algorithm
   template <int D, typename E, typename... VertexTypes>
@@ -176,7 +176,6 @@ public:
   double getKappaInitial();
   double getKappaFinal();
   double getKappaUpdateFactor();
-
 
   void setAlphaBacktracking(std::vector<double> alphaBacktracking);
   void resetLagrangeMultiplierEq() override;

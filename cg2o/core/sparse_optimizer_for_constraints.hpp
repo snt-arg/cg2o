@@ -61,7 +61,7 @@ using namespace std;
 // Default constructor
 template <typename Derived>
 SparseOptimizerForConstraints<Derived>::SparseOptimizerForConstraints() {
- defineAlphaBacktracking(_alpha);
+  defineAlphaBacktracking(_alpha);
 };
 
 // Default destructor
@@ -107,7 +107,7 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
             break;
           }
         }
-       if (allVerticesOK && !e->allVerticesFixed()) {
+        if (allVerticesOK && !e->allVerticesFixed()) {
           auxEdgeSet.insert(e);
           levelEdges++;
         }
@@ -217,8 +217,6 @@ bool SparseOptimizerForConstraints<Derived>::updateInitialization(
   return _algorithm->updateStructure(newVertices, eset);
 }
 
-
-
 template <typename Derived>
 bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
     HyperGraph::EdgeSet &eset) {
@@ -303,8 +301,7 @@ void SparseOptimizerForConstraints<Derived>::setConvergenceCriterion(
 };
 
 template <typename Derived>
-bool SparseOptimizerForConstraints<Derived>::verifyConvergence(
-    double epsilon) {
+bool SparseOptimizerForConstraints<Derived>::verifyConvergence(double epsilon) {
   g2o::OptimizationAlgorithmWithHessian *algorithm =
       static_cast<g2o::OptimizationAlgorithmWithHessian *>(_algorithm);
 
@@ -317,8 +314,7 @@ bool SparseOptimizerForConstraints<Derived>::verifyConvergence(
   Eigen::Map<const Eigen::VectorXd> bVec(b, xSize);
   Eigen::Map<const Eigen::VectorXd> updateVec(update, xSize);
 
-  if (terminationCriteria().verifyConvergence(bVec, updateVec,
-                                                     epsilon)) {
+  if (terminationCriteria().verifyConvergence(bVec, updateVec, epsilon)) {
     return true;
   }
   return false;
@@ -336,18 +332,21 @@ bool SparseOptimizerForConstraints<Derived>::verifyEqFeasibility(
   return terminationCriteria().verifyEqFeasibility(edgeVec, epsilon);
 }
 
-template<typename Derived>
-void SparseOptimizerForConstraints<Derived>::setWarmStartLagrangeMultiplierFlag(bool flag) {
-      _warm_start_lagrange_multiplier_flag = flag;
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::setWarmStartLagrangeMultiplierFlag(
+    bool flag) {
+  _warm_start_lagrange_multiplier_flag = flag;
 }
 
-template<typename Derived>
-void SparseOptimizerForConstraints<Derived>::setInnerIterationsMax(int maxInnerIterations) {
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::setInnerIterationsMax(
+    int maxInnerIterations) {
   _num_inner_iterations_max = maxInnerIterations;
 }
 
-template<typename Derived>
-void SparseOptimizerForConstraints<Derived>::setLagrangeMultiplierInitial(double lagrangeMultiplierInitial) {
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::setLagrangeMultiplierInitial(
+    double lagrangeMultiplierInitial) {
   _lagrange_multiplier_initial = lagrangeMultiplierInitial;
 }
 
@@ -358,61 +357,58 @@ void SparseOptimizerForConstraints<Derived>::setEpsilonConstraint(
 }
 
 template <typename Derived>
-void SparseOptimizerForConstraints<Derived>::setEpsilonConvergence(double epsilon) {
+void SparseOptimizerForConstraints<Derived>::setEpsilonConvergence(
+    double epsilon) {
   _terminationCriteria.epsilon_convergence = epsilon;
 }
 
-template<typename Derived>
-bool SparseOptimizerForConstraints<Derived>::getWarmStartLagrangeMultiplierFlag() {
-    return  _warm_start_lagrange_multiplier_flag ;
+template <typename Derived>
+bool SparseOptimizerForConstraints<
+    Derived>::getWarmStartLagrangeMultiplierFlag() {
+  return _warm_start_lagrange_multiplier_flag;
 }
 
-template<typename Derived>
+template <typename Derived>
 int SparseOptimizerForConstraints<Derived>::getInnerIterationsMax() {
   return _num_inner_iterations_max;
 }
 
-
-template<typename Derived>
+template <typename Derived>
 double SparseOptimizerForConstraints<Derived>::getLagrangeMultiplierInitial() {
   return _lagrange_multiplier_initial;
 }
 
-
-
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::setAlphaBacktrackingValue(
+    double alpha) {
+  _alpha = alpha;
+}
 
 template <typename Derived>
-void SparseOptimizerForConstraints<Derived>::setAlphaBacktrackingValue(double alpha){
-_alpha = alpha;
-} 
- 
-
-
-template <typename Derived>
-void SparseOptimizerForConstraints<Derived>::defineAlphaBacktracking(double alpha) {
-    if (alpha == -1.0) {
-     _alphaBacktracking = {1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 
-                              0.15, 0.1, 0.09, 0.08, 0.06, 0.05, 0.04, 0.03, 
-                              0.02, 0.01, 0.008, 0.007, 0.006, 0.005, 0.004, 
-                              0.003, 0.002, 1e-3, 1e-4, 1e-5, 1e-7, 1e-9, 1e-10, 
-                              1e-12, 1e-14, 1e-16, 1e-18, 1e-20, 1e-25, 1e-30};                              
+void SparseOptimizerForConstraints<Derived>::defineAlphaBacktracking(
+    double alpha) {
+  if (alpha == -1.0) {
+    _alphaBacktracking = {
+        1,     0.9,   0.8,   0.7,   0.6,   0.5,   0.4,   0.3,   0.25,  0.2,
+        0.15,  0.1,   0.09,  0.08,  0.06,  0.05,  0.04,  0.03,  0.02,  0.01,
+        0.008, 0.007, 0.006, 0.005, 0.004, 0.003, 0.002, 1e-3,  1e-4,  1e-5,
+        1e-7,  1e-9,  1e-10, 1e-12, 1e-14, 1e-16, 1e-18, 1e-20, 1e-25, 1e-30};
     return;
-    } // the default case 
+  } // the default case
 
-    if (alpha > 0 && alpha < 1){
+  if (alpha > 0 && alpha < 1) {
     _alphaBacktracking.clear();
-    _alphaBacktracking.reserve(100);  // Pre-allocate memory to avoid reallocations
+    _alphaBacktracking.reserve(
+        100); // Pre-allocate memory to avoid reallocations
     _alphaBacktracking.push_back(1);
-    while (_alphaBacktracking.back() > 1e-30){
+    while (_alphaBacktracking.back() > 1e-30) {
       _alphaBacktracking.push_back(_alphaBacktracking.back() * alpha);
     }
-    } else  {
+  } else {
     std::cerr << "[Error] Invalid alpha value for backtracking: " << alpha
-              << ". It must be between 0 and 1. or -1.0 for the default case" << std::endl;
-    }
-     
-
-    }
-
+              << ". It must be between 0 and 1. or -1.0 for the default case"
+              << std::endl;
+  }
+}
 
 } // namespace cg2o

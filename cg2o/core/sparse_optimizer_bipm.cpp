@@ -27,7 +27,6 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
-
 #include "sparse_optimizer_bipm.h"
 #include "g2o/core/optimization_algorithm_with_hessian.h"
 #include "g2o/core/sparse_optimizer.h"
@@ -44,34 +43,38 @@ using namespace std;
 
 // Default constructor
 SparseOptimizerBIPM::SparseOptimizerBIPM() {
-   _lagrange_multiplier_initial = 0;
-   _num_inner_iterations_max = 100;
+  _lagrange_multiplier_initial = 0;
+  _num_inner_iterations_max = 100;
 }
 
 // Default destructor
 SparseOptimizerBIPM::~SparseOptimizerBIPM() = default;
 
 // Setter solver paramters
-void SparseOptimizerBIPM::setKappa(double kappa) {_kappa = kappa;}
-void SparseOptimizerBIPM::setKappaInitial(double kappaInitial) {_kappa_initial = kappaInitial;}
-void SparseOptimizerBIPM::setKappaUpdateFactor(double kappaUpdateFactor) {_kappa_update_factor = kappaUpdateFactor;} 
-void SparseOptimizerBIPM::setKappaFinal(double kappaFinal) {_kappa_final = kappaFinal;}
-
- 
-
+void SparseOptimizerBIPM::setKappa(double kappa) { _kappa = kappa; }
+void SparseOptimizerBIPM::setKappaInitial(double kappaInitial) {
+  _kappa_initial = kappaInitial;
+}
+void SparseOptimizerBIPM::setKappaUpdateFactor(double kappaUpdateFactor) {
+  _kappa_update_factor = kappaUpdateFactor;
+}
+void SparseOptimizerBIPM::setKappaFinal(double kappaFinal) {
+  _kappa_final = kappaFinal;
+}
 
 // getter for the solver parameters
-double SparseOptimizerBIPM::getKappa(){ return _kappa;}
+double SparseOptimizerBIPM::getKappa() { return _kappa; }
 double SparseOptimizerBIPM::getKappaInitial() { return _kappa_initial; }
 double SparseOptimizerBIPM::getKappaFinal() { return _kappa_final; }
-double SparseOptimizerBIPM::getKappaUpdateFactor() { return _kappa_update_factor; }
+double SparseOptimizerBIPM::getKappaUpdateFactor() {
+  return _kappa_update_factor;
+}
 
 void SparseOptimizerBIPM::resetLagrangeMultiplierEq() {
   for (auto &vertex : _vEqLagrangeMultipliers) {
     vertex->setToOrigin();
   }
 }
-
 
 void SparseOptimizerBIPM::setAlphaBacktracking(
     std::vector<double> alphaBacktracking) {
@@ -233,8 +236,8 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
   bool outerLoopStop = false;
   bool ok = true;
   _kappa = _kappa_initial; // reset _kappa to the initial value
-  if (!_warm_start_lagrange_multiplier_flag){
-  resetLagrangeMultiplierEq();
+  if (!_warm_start_lagrange_multiplier_flag) {
+    resetLagrangeMultiplierEq();
   }
 
   ok = _algorithm->init(online);
@@ -254,12 +257,12 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
     this->setKappa(_kappa_final);
   }
 
-  if (_kappa_update_factor <= 1 ) {
+  if (_kappa_update_factor <= 1) {
     std::cerr << "[WARNING] Value of_nu = " << _kappa_update_factor
               << "; It should be greater than 1." << std::endl;
   }
-  while (!outerLoopStop) { 
-     
+  while (!outerLoopStop) {
+
     int i = 0;
     innerLoopStop = false;
     // BIPM - Inner loop
@@ -305,7 +308,7 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
       // termination criteria
       innerLoopStop = i >= _num_inner_iterations_max ||
                       cjIterations >= iterations || terminate() ||
-                      verifyConvergence(-1 * 10) || !ok;  
+                      verifyConvergence(-1 * 10) || !ok;
     }
 
     if (result == OptimizationAlgorithm::Fail) {
@@ -318,8 +321,7 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
     }
     // check if the termination condition is satisfied
     outerLoopStop =
-        verifyConvergence(-1) &&
-        verifyEqFeasibility(_activeEdgesEq, -1.0) &&
+        verifyConvergence(-1) && verifyEqFeasibility(_activeEdgesEq, -1.0) &&
         verifyIneqFeasibility(_activeEdgesIneq, -1.0); // defualt * 1
     outerLoopStop = _kappa >= _kappa_final && (outerLoopStop);
 
@@ -332,4 +334,3 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
 }
 
 } // namespace cg2o
-

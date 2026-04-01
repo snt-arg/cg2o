@@ -27,15 +27,13 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
- 
-
+#include "sparse_optimizer_al.h"
 #include "g2o/core/optimization_algorithm_with_hessian.h"
 #include "g2o/core/sparse_optimizer.h"
 #include "g2o/stuff/logger.h"
 #include "g2o/stuff/timeutil.h"
 #include "optimization_algorithm.h"
 #include "solver.h"
-#include "sparse_optimizer_al.h"
 #include <Eigen/Core>
 #include <iostream>
 #include <string>
@@ -43,7 +41,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 
 namespace cg2o {
 using namespace std;
- 
+
 // Default constructor
 SparseOptimizerAL::SparseOptimizerAL() {
   _lagrange_multiplier_initial = 0;
@@ -69,7 +67,8 @@ double SparseOptimizerAL::getRhoUpdateFactor() { return _rho_update_factor; }
 
 // Setter solver paramters
 void SparseOptimizerAL::resetLagrangeMultiplierEq() {
-  // update the multiplier for Equality constraints and reset also the panelty paramters
+  // update the multiplier for Equality constraints and reset also the panelty
+  // paramters
   for (auto &edge : _activeEdgesEq) {
     executeEqMultiplierUpdate(edge);
   }
@@ -102,12 +101,11 @@ void SparseOptimizerAL::setAlphaBacktracking(
 int SparseOptimizerAL::optimize(int iterations, bool online) {
   using namespace g2o;
 
-   if (_ivMap.size() == 0) {
+  if (_ivMap.size() == 0) {
     G2O_WARN("0 vertices to optimize, maybe forgot to call "
              "initializeOptimization()");
     return -1;
   }
- 
 
   int cjIterations = 0;
   double cumTime = 0;
@@ -219,5 +217,3 @@ int SparseOptimizerAL::optimize(int iterations, bool online) {
 }
 
 } // namespace cg2o
-
- 
