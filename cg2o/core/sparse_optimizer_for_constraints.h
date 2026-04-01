@@ -126,6 +126,9 @@ public:
     return _alphaBacktracking[0];
   };
 
+  void updateEdgeVertices(OptimizableGraph::Edge *edge, const double *update,
+                          double scalingFactor = 1.0);
+
   // Termination
 
   TerminationCriteria &terminationCriteria();
@@ -149,6 +152,8 @@ public:
   // virtual void defineAlphaBacktracking() {      }
 
 protected:
+  std::vector<std::shared_ptr<g2o::OptimizableGraph::Vertex>>
+      _vEqLagrangeMultipliers; // Set of Lagrangian vertices
   std::unordered_map<void *, std::function<void()>>
       updateMultipliersEqFunctionMap;
   TerminationCriteria _terminationCriteria; // New termination criteria object
@@ -156,11 +161,11 @@ protected:
   std::set<OptimizableGraph::Edge *> _edgeIneqSet; // Set of inequality edges
   EdgeContainer _activeEdgesEq; ///< sorted according to EdgeIDCompare
   std::set<OptimizableGraph::Edge *> _edgeEqSet; // Set of equality edges
-  double
-      _lagrange_multiplier_initial; // Initial value for the Lagrangian vertex
+  double _lagrange_multiplier_initial_eq; // Initial value for the Lagrangian
+                                          // vertex
   int _num_inner_iterations_max; // Maximum number of inner iterations for the
                                  // AL algorithm
-  bool _warm_start_lagrange_multiplier_flag =
+  bool _warm_start_lagrange_multiplier_eq_flag =
       false; // Flag to indicate if the Lagrangian multiplier should be warmed
              // up
              // solver parameter

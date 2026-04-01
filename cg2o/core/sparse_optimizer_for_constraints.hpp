@@ -218,6 +218,24 @@ bool SparseOptimizerForConstraints<Derived>::updateInitialization(
 }
 
 template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::updateEdgeVertices(
+    OptimizableGraph::Edge *edge, const double *update, double scalingFactor) {
+  for (size_t i = 0; i < edge->vertices().size(); ++i) {
+    auto *vertex = static_cast<OptimizableGraph::Vertex *>(edge->vertex(i));
+    if (vertex->fixed())
+      continue;
+
+    int offset = vertex->colInHessian();
+
+    Eigen::Map<const Eigen::VectorXd> updateVec(update + offset,
+                                                vertex->dimension());
+    Eigen::VectorXd scaledUpdate = scalingFactor * updateVec;
+
+    vertex->oplus(scaledUpdate.data());
+  }
+}
+
+template <typename Derived>
 bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
     HyperGraph::EdgeSet &eset) {
   preIteration(-1);
@@ -335,7 +353,7 @@ bool SparseOptimizerForConstraints<Derived>::verifyEqFeasibility(
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::setWarmStartLagrangeMultiplierFlag(
     bool flag) {
-  _warm_start_lagrange_multiplier_flag = flag;
+  _warm_start_lagrange_multiplier_eq_flag = flag;
 }
 
 template <typename Derived>
@@ -347,7 +365,7 @@ void SparseOptimizerForConstraints<Derived>::setInnerIterationsMax(
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::setLagrangeMultiplierInitial(
     double lagrangeMultiplierInitial) {
-  _lagrange_multiplier_initial = lagrangeMultiplierInitial;
+  _lagrange_multiplier_initial_eq = lagrangeMultiplierInitial;
 }
 
 template <typename Derived>
@@ -365,7 +383,7 @@ void SparseOptimizerForConstraints<Derived>::setEpsilonConvergence(
 template <typename Derived>
 bool SparseOptimizerForConstraints<
     Derived>::getWarmStartLagrangeMultiplierFlag() {
-  return _warm_start_lagrange_multiplier_flag;
+  return _warm_start_lagrange_multiplier_eq_flag;
 }
 
 template <typename Derived>
@@ -375,7 +393,7 @@ int SparseOptimizerForConstraints<Derived>::getInnerIterationsMax() {
 
 template <typename Derived>
 double SparseOptimizerForConstraints<Derived>::getLagrangeMultiplierInitial() {
-  return _lagrange_multiplier_initial;
+  return _lagrange_multiplier_initial_eq;
 }
 
 template <typename Derived>

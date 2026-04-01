@@ -43,7 +43,7 @@ using namespace std;
 
 // Default constructor
 SparseOptimizerBIPM::SparseOptimizerBIPM() {
-  _lagrange_multiplier_initial = 0;
+  _lagrange_multiplier_initial_eq = 0;
   _num_inner_iterations_max = 100;
 }
 
@@ -63,10 +63,10 @@ void SparseOptimizerBIPM::setKappaFinal(double kappaFinal) {
 }
 
 // getter for the solver parameters
-double SparseOptimizerBIPM::getKappa() { return _kappa; }
-double SparseOptimizerBIPM::getKappaInitial() { return _kappa_initial; }
-double SparseOptimizerBIPM::getKappaFinal() { return _kappa_final; }
-double SparseOptimizerBIPM::getKappaUpdateFactor() {
+double SparseOptimizerBIPM::Kappa() const { return _kappa; }
+double SparseOptimizerBIPM::KappaInitial() const { return _kappa_initial; }
+double SparseOptimizerBIPM::KappaFinal() const { return _kappa_final; }
+double SparseOptimizerBIPM::KappaUpdateFactor() const {
   return _kappa_update_factor;
 }
 
@@ -84,23 +84,8 @@ void SparseOptimizerBIPM::setAlphaBacktracking(
 double SparseOptimizerBIPM::backtrackingAlgorithm(const double *update) {
   // Initialize variables
   size_t c = 0;
-  int offset = 0;
   bool _inside_interior_flag = true;
   bool debugFlag = false;
-
-  if (debugFlag) {
-    // cout the vertex estimate before backtracking
-    std::cout << " before backtracking = ";
-    std::cout << "  xy: "
-              << static_cast<VertexLagrangeMultiplier<2> *>(this->vertex(0))
-                     ->estimate()
-                     .transpose();
-    std::cout << "  z: "
-              << static_cast<VertexLagrangeMultiplier<1> *>(this->vertex(1))
-                     ->estimate()
-                     .transpose()
-              << std::endl;
-  }
 
   // Loop over all inequality edges
   for (auto &edge : _activeEdgesIneq) {
@@ -108,65 +93,14 @@ double SparseOptimizerBIPM::backtrackingAlgorithm(const double *update) {
     while (c < _alphaBacktracking.size() - 1) {
       _inside_interior_flag = true;
       // 1- Scale the update and apply it to the vertices
-      for (size_t i = 0; i < edge->vertices().size(); ++i) {
-        // Get the vertex
-        OptimizableGraph::Vertex *vertex =
-            static_cast<OptimizableGraph::Vertex *>(edge->vertex(i));
-        offset = vertex->colInHessian(); // Assumes hessianIndex() gives the
-                                         // position of the vertex in _x
-
-        // Scale the update for this step size
-        Eigen::Map<const Eigen::VectorXd> updateVec(update + offset,
-                                                    vertex->dimension());
-        Eigen::VectorXd scaledUpdate = _alphaBacktracking[c] * updateVec;
-
-        // Apply the scalled update
-        vertex->oplus(scaledUpdate.data());
-      }
+      updateEdgeVertices(edge, update, _alphaBacktracking[c]);
 
       // 2- Check if the inequality constraint is satisfied
       edge->computeError();
       auto error = edge->errorData();
 
       // 3- Reverse the update and apply it to the vertices
-      for (size_t i = 0; i < edge->vertices().size(); ++i) {
-        // Get the vertex
-        OptimizableGraph::Vertex *vertex =
-            static_cast<OptimizableGraph::Vertex *>(edge->vertex(i));
-        offset = vertex->colInHessian(); // Assumes hessianIndex() gives the
-                                         // position of the vertex in _x
-
-        // Scale the update for this step size to reverse
-        Eigen::Map<const Eigen::VectorXd> updateVec(update + offset,
-                                                    vertex->dimension());
-        Eigen::VectorXd reverseUpdate = -_alphaBacktracking[c] * updateVec;
-
-        // Apply the scalled update
-        vertex->oplus(reverseUpdate.data());
-
-        if (debugFlag) {
-          std::cout << " After  local  update reversed  scaled update  "
-                    << endl;
-          if (offset == 0) {
-            std::cout << "  xy: "
-                      << static_cast<VertexLagrangeMultiplier<2> *>(
-                             this->vertex(0))
-                             ->estimate()
-                             .transpose()
-                      << std::endl;
-          } else {
-            std::cout << "  z: "
-                      << static_cast<VertexLagrangeMultiplier<1> *>(
-                             this->vertex(1))
-                             ->estimate()
-                             .transpose()
-                      << std::endl;
-          }
-          std::cout << "-------------------------------------------------------"
-                       "----------"
-                    << endl;
-        }
-      }
+      updateEdgeVertices(edge, update, -_alphaBacktracking[c]);
 
       // 4- Check if the inequality constraint is satisfied
       for (int i = 0; i < edge->dimension(); ++i) {
@@ -236,7 +170,7 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
   bool outerLoopStop = false;
   bool ok = true;
   _kappa = _kappa_initial; // reset _kappa to the initial value
-  if (!_warm_start_lagrange_multiplier_flag) {
+  if (!_warm_start_lagrange_multiplier_eq_flag) {
     resetLagrangeMultiplierEq();
   }
 

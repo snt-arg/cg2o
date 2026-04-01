@@ -144,13 +144,7 @@ public:
   virtual void update(const double *update) override;
 
   virtual int optimize(int iterations, bool online = false) override;
-  /**
-   * computes the blocks of the inverse of the specified pattern.
-   * the pattern is given via pairs <row, col> of the blocks in the hessian
-   * @param blockIndices: the pattern
-   * @param spinv: the sparse block matrix with the result
-   * @returns false if the operation is not supported by the solver
-   */
+  
 
   virtual double backtrackingAlgorithm(const double *update) override;
   /**
@@ -160,29 +154,26 @@ public:
   @returns the the scaling factor for a successful step size
   */
 
-  // virtual void defineAlphaBacktracking() {      }
 
   // solver parameter
 
 public:
-  // Setter for the mu value
+  // Setter for the kappa value
   void setKappa(double kappa);
   void setKappaInitial(double kappaInitial);
   void setKappaFinal(double kappaFinal);
   void setKappaUpdateFactor(double kappaUpdateFactor);
 
   // getter for the solver parameters
-  double getKappa();
-  double getKappaInitial();
-  double getKappaFinal();
-  double getKappaUpdateFactor();
+  double Kappa() const;
+  double KappaInitial() const;
+  double KappaFinal() const;
+  double KappaUpdateFactor() const;
 
   void setAlphaBacktracking(std::vector<double> alphaBacktracking);
   void resetLagrangeMultiplierEq() override;
 
 protected:
-  std::vector<std::shared_ptr<g2o::OptimizableGraph::Vertex>>
-      _vEqLagrangeMultipliers; // Set of Lagrangian vertices
   std::unordered_map<void *, std::function<void()>>
       updateMultipliersIneqFunctionMap;
   // solver parameter
@@ -227,7 +218,7 @@ bool SparseOptimizerBIPM::addEdgeEqImpl(
   auto vLagrangian = std::make_shared<VertexLagrangeMultiplier<D>>();
   // auto* nu = new VertexLagrangeMultiplier<D>();
   vLagrangian->setId(e->getVertexLagrangeMultiplierId());
-  vLagrangian->setInitialValue(_lagrange_multiplier_initial);
+  vLagrangian->setInitialValue(_lagrange_multiplier_initial_eq);
 
   // Add the Nu vertex to the optimizer
   this->addVertex(vLagrangian.get());
@@ -270,7 +261,6 @@ void SparseOptimizerBIPM::constructQuadraticFormIneq(
                                 std::make_index_sequence<_nr_of_vertices>());
 }
 
-// In case we use AL alg for Eq with BIPM
 template <int D, typename E, typename... VertexTypes>
 void SparseOptimizerBIPM::constructQuadraticFormEq(
     BaseFixedSizedEdgeEq<D, E, VertexTypes...> &edge) {
