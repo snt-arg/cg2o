@@ -1,6 +1,6 @@
 set(source
   sparse_optimizer_bipm.cpp
- # sparse_optimizer_ispd.cpp
+  sparse_optimizer_ispd.cpp
   sparse_optimizer_al.cpp
 )
 
@@ -9,7 +9,7 @@ set(header
   base_fixed_sized_edge_ineq.h
   sparse_optimizer_al.h
   sparse_optimizer_bipm.h 
-  #sparse_optimizer_ispd.h
+  sparse_optimizer_ispd.h
   sparse_optimizer_for_constraints.h
   sparse_optimizer_for_constraints.hpp
   termination_criteria.h
