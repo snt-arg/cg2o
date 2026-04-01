@@ -94,8 +94,8 @@ public:
 
   void linearizeOplus() override {
     auto &J_v0 = std::get<0>(_jacobianOplus); // Jacobian of edge for vertex XY
-    J_v0 << 1, 0, // J(e_0,v_0[0]) J(e_0,v_0[1])
-        0, 1;     // J(e_1,v_0[0]) J(e_1,v_0[1])
+    J_v0 << 1, 0,                             // J(e_0,v_0[0]) J(e_0,v_0[1])
+        0, 1;                                 // J(e_1,v_0[0]) J(e_1,v_0[1])
   }
 
   virtual bool read(std::istream &in) override {
@@ -123,10 +123,8 @@ public:
 
   void linearizeOplus() override {
     auto &J_v0 = std::get<0>(_jacobianOplus); // Jacobian of edge for vertex Z
-    J_v0 << 1; // J(e_0,v_0)
-
-   }
-
+    J_v0 << 1;                                // J(e_0,v_0)
+  }
 
   bool read(std::istream & /*is*/) override { return false; }
 
@@ -178,7 +176,9 @@ public:
   }
 
   void linearizeOplus() override {
-    auto& J_v0 = std::get<0>(this->_jacobianOplus); // Jacobian of ineq [xy(1) ; xy(2)] < _b or for vertex XY
+    auto &J_v0 =
+        std::get<0>(this->_jacobianOplus); // Jacobian of ineq [xy(1) ; xy(2)] <
+                                           // _b or for vertex XY
 
     J_v0 << 1, 0, // J(ineq_0,v_0[0]) J(ineq_0,v_0[1])
         0, 1;     // J(ineq_1,v_0[0]) J(ineq_1,v_0[1])
@@ -205,15 +205,12 @@ public:
     _ineq[0] = (x - _b);
   }
 
-
   void linearizeOplus() override {
-    auto& J_v0 = std::get<0>(this->_jacobianOplus); // Jacobian of ineq for vertex Z
+    auto &J_v0 =
+        std::get<0>(this->_jacobianOplus); // Jacobian of ineq for vertex Z
 
     J_v0 << 1;
-
   }
-
-
 
   void setB(double b) { _b = b; }
 

@@ -60,7 +60,8 @@ public:
   }
 };
 
-// Define the EdgeXY which represents the cost function 0.5 * ||x1-1||^2 + 0.5 * ||x2-1||^2
+// Define the EdgeXY which represents the cost function 0.5 * ||x1-1||^2 + 0.5 *
+// ||x2-1||^2
 class EdgeXY : public g2o::BaseUnaryEdge<2, Eigen::Vector2d, VertexXY> {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -75,8 +76,8 @@ public:
 
   void linearizeOplus() override {
     auto &J_v0 = std::get<0>(_jacobianOplus); // Jacobian of edge for vertex XY
-    J_v0 << 1, 0, // J(e_0,v_0[0]) J(e_0,v_0[1])
-        0, 1;     // J(e_1,v_0[0]) J(e_1,v_0[1])
+    J_v0 << 1, 0,                             // J(e_0,v_0[0]) J(e_0,v_0[1])
+        0, 1;                                 // J(e_1,v_0[0]) J(e_1,v_0[1])
   }
 
   virtual bool read(std::istream &in) override {
@@ -90,17 +91,16 @@ public:
   }
 };
 
- class EdgeEq : public cg2o::BaseFixedSizedEdgeEq<1, double, VertexXY> {
+class EdgeEq : public cg2o::BaseFixedSizedEdgeEq<1, double, VertexXY> {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   EdgeEq(){};
   void computeEq() override {
-    const VertexXY *vxy = static_cast<const VertexXY *>(_vertices[0]);  
+    const VertexXY *vxy = static_cast<const VertexXY *>(_vertices[0]);
 
     auto xy = vxy->estimate();
-  
-    _eq[0] = (xy[0] * xy[0]  + xy[1] *xy[1] -1);
-     
+
+    _eq[0] = (xy[0] * xy[0] + xy[1] * xy[1] - 1);
   }
 
   void linearizeOplus() override {
@@ -108,16 +108,14 @@ public:
                            // multiplier)
     const int D = _eq.size();
 
-    const VertexXY *vxy = static_cast<const VertexXY *>(_vertices[0]);  
+    const VertexXY *vxy = static_cast<const VertexXY *>(_vertices[0]);
     auto xy = vxy->estimate();
- 
+
     auto &&J_v0 = std::get<0>(_jacobianOplus).topRows(D); // vertex z = v_1
     J_v0 << 2 * xy[0], 2 * xy[1]; //  J(e_0,v_0[0])  J(e_0,v_0[1])
   }
-
 };
 
- 
 class EdgeIneqXY : public cg2o::BaseFixedSizedEdgeIneq<1, double, VertexXY> {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -125,21 +123,22 @@ public:
   EdgeIneqXY(){};
 
   void computeIneq() override {
-     const VertexXY *vxy = static_cast<const VertexXY *>(_vertices[0]);  
-     auto xy = vxy->estimate();
+    const VertexXY *vxy = static_cast<const VertexXY *>(_vertices[0]);
+    auto xy = vxy->estimate();
 
-    _ineq[0] = (4 * xy[0] * xy[0]  + 0.25* xy[1] *xy[1] -1);
+    _ineq[0] = (4 * xy[0] * xy[0] + 0.25 * xy[1] * xy[1] - 1);
   }
 
   void linearizeOplus() override {
-     const VertexXY *vxy = static_cast<const VertexXY *>(_vertices[0]);  
-     auto xy = vxy->estimate();
-    
-     auto& J_v0 = std::get<0>(this->_jacobianOplus); // Jacobian of ineq [xy(1) ; xy(2)] < _b or for vertex XY
+    const VertexXY *vxy = static_cast<const VertexXY *>(_vertices[0]);
+    auto xy = vxy->estimate();
 
-    J_v0 << 8 * xy[0], 0.5* xy[1];  // J(ineq_0,v_0[0]) J(ineq_0,v_0[1])
-   }
+    auto &J_v0 =
+        std::get<0>(this->_jacobianOplus); // Jacobian of ineq [xy(1) ; xy(2)] <
+                                           // _b or for vertex XY
 
+    J_v0 << 8 * xy[0], 0.5 * xy[1]; // J(ineq_0,v_0[0]) J(ineq_0,v_0[1])
+  }
 };
 
 #endif

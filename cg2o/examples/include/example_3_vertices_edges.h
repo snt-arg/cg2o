@@ -74,30 +74,26 @@ public:
     _error[0] = (xy[0] + std::exp(-xy[1]) - _measurement[0]);
     _error[1] = (xy[0] * xy[0] + 2 * xy[1] + 1 - _measurement[1]);
   }
- 
-   void linearizeOplus() override {
+
+  void linearizeOplus() override {
     const VertexXY *v = static_cast<const VertexXY *>(_vertices[0]);
     const Eigen::Vector2d &xy = v->estimate();
 
     auto temp = -std::exp(-xy[1]); // Derivative of e^(-x2) is -e^(-x2)
 
     auto &J_v0 = std::get<0>(_jacobianOplus); // Jacobian of edge for vertex XY
-    J_v0 << 1.0, temp,        // J(e_0,v_0[0]) J(e_0,v_0[1])
-            2.0 * xy[0], 2.0;   // J(e_1,v_0[0]) J(e_1,v_0[1])  
+    J_v0 << 1.0, temp,                        // J(e_0,v_0[0]) J(e_0,v_0[1])
+        2.0 * xy[0], 2.0;                     // J(e_1,v_0[0]) J(e_1,v_0[1])
   }
 
-  virtual bool read(std::istream &in) override {
-     return true;
-  }
+  virtual bool read(std::istream &in) override { return true; }
 
-  virtual bool write(std::ostream &out) const override {
-     return true;
-  }
+  virtual bool write(std::ostream &out) const override { return true; }
 };
 
 class EdgeEq
     : public cg2o::BaseFixedSizedEdgeEq<1, double,
-                                       VertexXY> { // x1 + x1^3 + x2 + x2^2
+                                        VertexXY> { // x1 + x1^3 + x2 + x2^2
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   EdgeEq(){};
@@ -108,7 +104,7 @@ public:
 
     _eq[0] = (xy[0] + std::pow(xy[0], 3) + xy[1] + std::pow(xy[1], 2));
   }
- 
+
   void linearizeOplus() override {
     initializeJacobians(); // to handle bottomRows (related to the Lagrange
                            // multiplier)
@@ -119,9 +115,8 @@ public:
 
     auto &&J_v0 = std::get<0>(_jacobianOplus).topRows(D); // vertex z = v_1
     J_v0 << 1 + 3 * std::pow(xy[0], 2),
-            1 + 2 * xy[1];   //  J(e_0,v_0[0])  J(e_0,v_0[1])
+        1 + 2 * xy[1]; //  J(e_0,v_0[0])  J(e_0,v_0[1])
   }
-        
 };
 
 #endif // EXAMPLE_3_EDGES_H
