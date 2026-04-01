@@ -66,6 +66,11 @@ OP: min ||xy(1)-a||^2 +  ||xy(2)-b||^2 + ||z-c||^2
 #include "cg2o/solvers/eigen/linear_solver_eigen_svd.h"
 #endif
 
+#ifdef USE_G2O_SOLVERS
+#include "g2o/solvers/csparse/linear_solver_csparse.h"
+#include "g2o/solvers/cholmod/linear_solver_cholmod.h"  
+#endif
+
 #ifdef USE_ISPD
 #include "cg2o/core/sparse_optimizer_ispd.h" // using the Augmented Lagrangian
 #endif
@@ -222,6 +227,16 @@ int main(int argc, char **argv) {
     std::cout << "Linear solver:        [10]      (BiCGSTAB)  " << std::endl;
     linearSolver = std::make_unique<
         cg2o::LinearSolverEigenLSCG<g2o::BlockSolverX::PoseMatrixType>>();
+    break;
+#endif
+#ifdef USE_G2O_SOLVERS
+  case 11:
+    std::cout << "Linear solver:        [11]      (CSparse)  " << std::endl;
+    linearSolver = std::make_unique<g2o::LinearSolverCSparse<g2o::BlockSolverX::PoseMatrixType>>();
+    break;
+  case 12:
+    std::cout << "Linear solver:        [12]      (Cholmod)  " << std::endl;
+    linearSolver = std::make_unique<g2o::LinearSolverCholmod<g2o::BlockSolverX::PoseMatrixType>>();
     break;
 #endif
   default:

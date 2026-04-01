@@ -26,14 +26,6 @@ endif()
 add_executable(example_2 src/example_2.cpp)
 target_link_libraries(example_2 ${G2O_LIBRARIES} cg2o Eigen3::Eigen fmt::fmt)
 target_include_directories(example_2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-if(CG2O_BUILD_EIGEN_SOLVERS)
- target_link_libraries(example_2 solvers_eigen_extension)
- endif()
- 
-if(CG2O_BUILD_PARDISO)
- target_link_libraries(example_2 solver_eigen_pardiso)
-endif()
-
 
 
 #     minimize     0.5*||x1 + e^(-x2)||^2 + 0.5*||x1^2 + 2*x2 + 1||^2
@@ -42,11 +34,3 @@ endif()
 add_executable(example_3 src/example_3.cpp)
 target_link_libraries(example_3 ${G2O_LIBRARIES} cg2o Eigen3::Eigen fmt::fmt)
 target_include_directories(example_3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-if(CG2O_BUILD_EIGEN_SOLVERS)
- target_link_libraries(example_3 solvers_eigen_extension)
- endif()
- 
-if(CG2O_BUILD_PARDISO)
- target_link_libraries(example_3 solver_eigen_pardiso)
-endif()
- 

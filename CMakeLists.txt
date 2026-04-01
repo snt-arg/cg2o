@@ -19,7 +19,7 @@ set(CG2O_VERSION 1.0.0)
 # Configuration option: Default to ISPD optimizer, but allow switching to AL or IPM
 option(CG2O_BUILD_EXAMPLES "Build the examples" ON)
 option(CG2O_BUILD_MPC "Build the MPC controller" OFF)
-option(USE_G2O_SOLVERS "Enable g2o-based solvers (links g2o + csparse and cholmod)" OFF)
+option(USE_G2O_SOLVERS "Enable g2o-based solvers (links g2o + csparse and cholmod)" ON)
 option(CG2O_BUILD_PARDISO "allow using the Paradiso solver" ON)
 option(CG2O_BUILD_EIGEN_SOLVERS "allow building the Eigen solver" ON)
 
