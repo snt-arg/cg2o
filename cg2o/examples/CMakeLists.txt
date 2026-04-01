@@ -8,7 +8,7 @@ target_link_libraries(example_1 ${G2O_LIBRARIES} cg2o Eigen3::Eigen fmt::fmt)
 target_include_directories(example_1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(CG2O_BUILD_EIGEN_SOLVERS)
- target_link_libraries(example_1 solvers_eigen_extension)
+ target_link_libraries(example_1 solvers_eigen)
  endif()
  
 if(CG2O_BUILD_PARDISO)
