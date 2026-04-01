@@ -1,11 +1,14 @@
 cmake_minimum_required(VERSION 3.22)
 project(cg2o LANGUAGES CXX)
 
+
+
 set(CMAKE_LEGACY_CYGWIN_WIN32 0)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment target")
 
 # The library prefix
-set(LIB_PREFIX cg2o_)
+set(CG2O_LIB_PREFIX cg2o_)
+list(PREPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 set(g2o_C_FLAGS)
 set(g2o_CXX_FLAGS)
@@ -14,11 +17,25 @@ set(CG2O_LIB_VERSION   "0.1.0" CACHE STRING "cg2o library version")
 set(CG2O_LIB_SOVERSION "0.1"   CACHE STRING "cg2o library soversion")
 set(CG2O_VERSION 1.0.0)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+set(CG2O_TARGETS_EXPORT_NAME "${PROJECT_NAME}Targets")
+set(CG2O_CONFIG_INSTALL_DIR  "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
+
+set(RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
+set(LIBRARY_DESTINATION ${CMAKE_INSTALL_LIBDIR})
+set(ARCHIVE_DESTINATION ${CMAKE_INSTALL_LIBDIR})
+set(INCLUDES_DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+set(INCLUDES_INSTALL_DIR ${CMAKE_INSTALL_INCLUDEDIR}/cg2o)
+ 
+
+
+
 #----------------------------------------------------------------------------------------
 ##options 
 # Configuration option: Default to ISPD optimizer, but allow switching to AL or IPM
 option(CG2O_BUILD_EXAMPLES "Build the examples" ON)
-option(CG2O_BUILD_MPC "Build the MPC controller" OFF)
 option(USE_G2O_SOLVERS "Enable g2o-based solvers (links g2o + csparse and cholmod)" ON)
 option(CG2O_BUILD_PARDISO "allow using the Paradiso solver" ON)
 option(CG2O_BUILD_EIGEN_SOLVERS "allow building the Eigen solver" ON)
@@ -38,14 +55,9 @@ else()
   include_directories(${EIGEN3_INCLUDE_DIR})
 endif ()
 find_package(fmt REQUIRED)
-find_package(g2o 1.0.0 REQUIRED)
 
-
-
-
+find_package(g2o REQUIRED)
 # Specify the path to g2o include directory and libraries
-set(G2O_INCLUDE_DIRS "/usr/include/include" CACHE PATH "g2o include directory")
-set(G2O_LIBRARY_DIRS "/usr/include/lib" CACHE PATH "g2o library directory")
 set(G2O_LIBRARIES
     g2o::core
     g2o::stuff
@@ -59,7 +71,7 @@ if(USE_G2O_SOLVERS)
         g2o::csparse_extension
         g2o::solver_cholmod
     )
-endif()
+endif(USE_G2O_SOLVERS)
 
 
 # Manually specify g2o include directories and libraries
@@ -74,12 +86,12 @@ if (OPENMP_FOUND)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
     add_compile_definitions(G2O_USE_OPENMP)
-endif()
+endif(OPENMP_FOUND)
 
 if (CG2O_BUILD_EIGEN_SOLVERS)
     add_compile_definitions(CG2O_BUILD_EIGEN_SOLVERS)
     message(STATUS "Building with Eigen solvers enabled")
-endif()
+endif(CG2O_BUILD_EIGEN_SOLVERS)
 
 if(CG2O_BUILD_PARDISO)
     add_compile_definitions(CG2O_BUILD_PARDISO)
@@ -99,11 +111,14 @@ if(CG2O_BUILD_PARDISO)
         set(MKL_THREAD_LIB "-lmkl_gnu_thread")
         set(THREAD_LIB "-lgomp")
         message(STATUS "Using MKL with OpenMP threading for Pardiso solver")
-    endif()
+    endif(MKL_USE_TBB)
 
     # Define MKL library
     add_library(MKL INTERFACE)
-    target_include_directories(MKL INTERFACE ${MKL_INCLUDE_DIR})
+    target_include_directories(MKL INTERFACE
+      $<BUILD_INTERFACE:${MKL_INCLUDE_DIR}>
+      $<INSTALL_INTERFACE:include>
+    )   
     target_link_libraries(MKL INTERFACE
         -L${MKL_LIBRARY_DIR}
         -lmkl_intel_lp64
@@ -112,9 +127,9 @@ if(CG2O_BUILD_PARDISO)
         -lmkl_rt
         ${THREAD_LIB}
         -lpthread -lm -ldl
-    )
+    )  
     set(CMAKE_BUILD_RPATH "${MKL_LIBRARY_DIR}")
-endif()
+endif(CG2O_BUILD_PARDISO)
 
 
 
@@ -126,7 +141,7 @@ link_directories(${G2O_LIBRARY_DIRS})
 if(CG2O_BUILD_EXAMPLES)
     message(STATUS "Building with examples enabled")
     add_compile_definitions(CG2O_BUILD_EXAMPLES)
-endif()
+endif(CG2O_BUILD_EXAMPLES)
 
 
 if(CG2O_OPTIMIZER STREQUAL "AL")
@@ -143,31 +158,34 @@ endif()
 # add the cg2o extenstion
 add_subdirectory(cg2o)
 
-if(CG2O_BUILD_MPC)
-
-    option(MPC_USE_EXACT_JACOBIANS "Use analytical Jacobians instead of numerical ones" ON)
-    option(MPC_AMPL_LANGUAGE "Enable AMPL-based MPC formulation instead of G2O"   OFF)
-    option(MPC_BOTH_MODELS "Enable G2O"  OFF)
-
-    
-    if(MPC_USE_EXACT_JACOBIANS)
-        add_compile_definitions(MPC_USE_EXACT_JACOBIANS)
-        message(STATUS  "Using analytical Jacobian")
-    endif()
-
-    if(MPC_BOTH_MODELS)
-        add_compile_definitions(MPC_BOTH_MODELS)
-        message(STATUS  "Using both models")
-    endif()
-    
-    # either MPC_AMPL_LANGUAGE or USE_CASADI_LANGUAGE or none of them
-    if(MPC_AMPL_LANGUAGE AND MPC_CASADI_TOOL)
-        message(FATAL_ERROR "Cannot enable both MPC_AMPL_LANGUAGE and MPC_CASADI_TOOL at the same time.")
-    endif()
 
 
-    add_subdirectory(mpc)  
+install(EXPORT ${CG2O_TARGETS_EXPORT_NAME}
+  NAMESPACE cg2o::
+  DESTINATION ${CG2O_CONFIG_INSTALL_DIR}
+)
 
-endif()
+configure_package_config_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/cg2oConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/cg2oConfig.cmake
+  INSTALL_DESTINATION ${CG2O_CONFIG_INSTALL_DIR}
+)
+
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/cg2oConfigVersion.cmake
+  VERSION ${CG2O_LIB_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/cg2oConfig.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/cg2oConfigVersion.cmake
+  DESTINATION ${CG2O_CONFIG_INSTALL_DIR}
+)
+
+
+
+
+
 
 

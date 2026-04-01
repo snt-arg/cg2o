@@ -30,23 +30,26 @@ add_library(solver_eigen_umfpack ${G2O_LIB_TYPE}
 
 target_include_directories(solver_eigen_umfpack
   PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}   
-    ${UMFPACK_INCLUDE_DIR}        
+    "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+    "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
   PRIVATE
-    ${G2O_INCLUDE_DIRS}           
+    ${UMFPACK_INCLUDE_DIR}
 )
 
- target_link_libraries(solver_eigen_umfpack PRIVATE
-  ${G2O_LIBRARIES}
-  ${CG2O_EIGEN3_EIGEN_TARGET}
-  ${UMFPACK_LIB}
+target_link_libraries(solver_eigen_umfpack
+  PRIVATE
+    ${CG2O_EIGEN3_EIGEN_TARGET}
+    g2o::core
+    g2o::stuff
+    ${UMFPACK_LIB}
 )
+
 
 
 #----------------
 
 
-set_target_properties(solver_eigen_umfpack PROPERTIES OUTPUT_NAME ${LIB_PREFIX}solver_eigen_umfpack)
+set_target_properties(solver_eigen_umfpack PROPERTIES OUTPUT_NAME ${CG2O_LIB_PREFIX}solver_eigen_umfpack)
 set_target_properties(solver_eigen_umfpack PROPERTIES
   VERSION ${CG2O_LIB_VERSION}
   SOVERSION ${CG2O_LIB_SOVERSION})
@@ -55,11 +58,14 @@ if (APPLE)
 endif()
 target_compile_features(solver_eigen_umfpack PUBLIC cxx_std_17)
 
-target_include_directories(solver_eigen_umfpack PUBLIC
-  "$<BUILD_INTERFACE:${cg2o_SOURCE_DIR};${PROJECT_BINARY_DIR}>"
-  $<INSTALL_INTERFACE:include/cg2o/solvers/umfpack>
+target_include_directories(solver_eigen_umfpack
+  PUBLIC
+    "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+    "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+  PRIVATE
+    ${UMFPACK_INCLUDE_DIR}
 )
-
+ 
 install(TARGETS solver_eigen_umfpack
   EXPORT ${CG2O_TARGETS_EXPORT_NAME}
   RUNTIME DESTINATION ${RUNTIME_DESTINATION}

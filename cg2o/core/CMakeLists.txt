@@ -21,15 +21,16 @@ add_library(core ${G2O_LIB_TYPE} ${source} ${header})
 
 # Include directories
 target_include_directories(core PUBLIC
-  "$<BUILD_INTERFACE:${cg2o_SOURCE_DIR};${PROJECT_BINARY_DIR}>"
-  $<INSTALL_INTERFACE:include/cg2o/core>
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 )
 
-set_target_properties(core PROPERTIES OUTPUT_NAME ${LIB_PREFIX}core)
+set_target_properties(core PROPERTIES OUTPUT_NAME ${CG2O_LIB_PREFIX}core)
 set_target_properties(core PROPERTIES
   VERSION ${CG2O_LIB_VERSION}
   SOVERSION ${CG2O_LIB_SOVERSION})
-target_link_libraries(core PUBLIC ${G2O_LIBRARIES} ${CG2O_EIGEN3_EIGEN_TARGET})
+target_link_libraries(core PUBLIC  g2o::core ${CG2O_EIGEN3_EIGEN_TARGET})
+target_link_libraries(core PRIVATE g2o::stuff)
 target_compile_features(core PUBLIC cxx_std_17)
 
 if (APPLE)

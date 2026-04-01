@@ -1,0 +1,11 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+find_dependency(Eigen3 REQUIRED)
+find_dependency(fmt REQUIRED)
+find_dependency(g2o REQUIRED)
+
+include("${CMAKE_CURRENT_LIST_DIR}/@CG2O_TARGETS_EXPORT_NAME@.cmake")
+
+check_required_components(cg2o)
