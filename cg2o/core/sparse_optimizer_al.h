@@ -165,10 +165,10 @@ public:
   void setRhoUpdateFactor(double rhoUpdateFactor);
 
   // getter for the solver parameters
-  double getRho();
-  double getRhoInitial();
-  double getRhoMax();
-  double getRhoUpdateFactor();
+  double Rho() const;
+  double RhoInitial() const;
+  double RhoMax() const;
+  double RhoUpdateFactor() const;
 
   // Setter function
   void setAlphaBacktracking(std::vector<double> alphaBacktracking);
@@ -185,11 +185,7 @@ protected:
 
   bool _useSlackVariables = true; // Using slack variables for the inequality
                                   // constraints. it does not appear directly
-  bool _reset_lagrange_multipliers = false;
-
-  std::vector<std::shared_ptr<g2o::OptimizableGraph::Vertex>>
-      _vEqLagrangeMultipliers; // Set of Lagrangian vertices
-
+  bool _reset_lagrange_multipliers = false; 
   // _rho_bar is saved in the variable called slack variable
 };
 
@@ -235,7 +231,7 @@ bool SparseOptimizerAL::addEdgeEqImpl(
   auto vLagrangian = std::make_shared<VertexLagrangeMultiplier<D>>();
   // auto* nu = new VertexLagrangeMultiplier<D>();
   vLagrangian->setId(e->getVertexLagrangeMultiplierId());
-  vLagrangian->setInitialValue(_lagrange_multiplier_initial);
+  vLagrangian->setInitialValue(_lagrange_multiplier_initial_eq);
 
   // Add the Nu vertex to the optimizer
   this->addVertex(vLagrangian.get());
@@ -301,7 +297,7 @@ void SparseOptimizerAL::updateMultipliers(EdgeType &edge) {
   if (_reset_lagrange_multipliers) {
     if constexpr (is_ineq) {
       auto multiplier = edge.lagrangeMultiplier();
-      multiplier.setConstant(_lagrange_multiplier_initial);
+      multiplier.setConstant(_lagrange_multiplier_initial_eq);
       edge.setLagrangeMultiplier(multiplier);
 
       Eigen::Matrix<double, D, 1> rho_bar =
@@ -318,7 +314,7 @@ void SparseOptimizerAL::updateMultipliers(EdgeType &edge) {
 
     if constexpr (is_eq) {
       auto multiplier = edge.lagrangeMultiplier();
-      multiplier.setConstant(_lagrange_multiplier_initial);
+      multiplier.setConstant(_lagrange_multiplier_initial_eq);
       edge.setLagrangeMultiplier(multiplier);
 
       Eigen::Matrix<double, D, 1> rho_bar =

@@ -44,7 +44,7 @@ using namespace std;
 
 // Default constructor
 SparseOptimizerAL::SparseOptimizerAL() {
-  _lagrange_multiplier_initial = 0;
+  _lagrange_multiplier_initial_eq = 0;
   _num_inner_iterations_max = 10;
 }
 
@@ -61,9 +61,9 @@ void SparseOptimizerAL::setRhoUpdateFactor(double rhoUpdateFactor) {
 void SparseOptimizerAL::setRhoMax(double rhoMax) { _rho_max = rhoMax; }
 
 // getter for the solver parameters
-double SparseOptimizerAL::getRhoInitial() { return _rho_initial; }
-double SparseOptimizerAL::getRhoMax() { return _rho_max; }
-double SparseOptimizerAL::getRhoUpdateFactor() { return _rho_update_factor; }
+double SparseOptimizerAL::RhoInitial() const { return _rho_initial; }
+double SparseOptimizerAL::RhoMax() const { return _rho_max; }
+double SparseOptimizerAL::RhoUpdateFactor() const { return _rho_update_factor; }
 
 // Setter solver paramters
 void SparseOptimizerAL::resetLagrangeMultiplierEq() {
@@ -113,7 +113,7 @@ int SparseOptimizerAL::optimize(int iterations, bool online) {
   bool outerLoopStop = false;
   bool ok = true;
 
-  if (!_warm_start_lagrange_multiplier_flag) {
+  if (!_warm_start_lagrange_multiplier_eq_flag) {
     _reset_lagrange_multipliers = true;
     resetLagrangeMultiplierEq();
     for (auto &edge : _activeEdgesIneq) {
