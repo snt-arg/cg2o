@@ -28,24 +28,32 @@ add_library(solvers_eigen ${G2O_LIB_TYPE}
  ${HEADER_FILES}
 )
 
-set_target_properties(solvers_eigen PROPERTIES OUTPUT_NAME ${CG2O_LIB_PREFIX}solvers_eigen)
-set_target_properties(solvers_eigen PROPERTIES
-  VERSION ${CG2O_LIB_VERSION}
-  SOVERSION ${CG2O_LIB_SOVERSION})
-if (APPLE)
-  set_target_properties(solvers_eigen PROPERTIES INSTALL_NAME_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
-endif()
-target_compile_features(solvers_eigen PUBLIC cxx_std_17)
-target_link_libraries(solvers_eigen PRIVATE 
+target_include_directories(solvers_eigen PUBLIC
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+)
+
+target_link_libraries(solvers_eigen PUBLIC 
   g2o::stuff 
   g2o::core 
   ${CG2O_EIGEN3_EIGEN_TARGET}
 )
 
-target_include_directories(solvers_eigen PUBLIC
-  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
-  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+
+set_target_properties(solvers_eigen PROPERTIES
+  OUTPUT_NAME ${CG2O_LIB_PREFIX}solvers_eigen  
+  VERSION ${CG2O_LIB_VERSION}
+  SOVERSION ${CG2O_LIB_SOVERSION}
 )
+
+
+if (APPLE)
+  set_target_properties(solvers_eigen PROPERTIES INSTALL_NAME_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+endif()
+
+
+target_compile_features(solvers_eigen PUBLIC cxx_std_20)
+
 
 install(TARGETS solvers_eigen
   EXPORT ${CG2O_TARGETS_EXPORT_NAME}

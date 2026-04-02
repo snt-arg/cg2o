@@ -32,39 +32,32 @@ target_include_directories(solver_eigen_umfpack
   PUBLIC
     "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
     "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
-  PRIVATE
     ${UMFPACK_INCLUDE_DIR}
 )
 
 target_link_libraries(solver_eigen_umfpack
-  PRIVATE
+  PUBLIC
     ${CG2O_EIGEN3_EIGEN_TARGET}
     g2o::core
     g2o::stuff
     ${UMFPACK_LIB}
 )
 
+ 
 
-
-#----------------
-
-
-set_target_properties(solver_eigen_umfpack PROPERTIES OUTPUT_NAME ${CG2O_LIB_PREFIX}solver_eigen_umfpack)
 set_target_properties(solver_eigen_umfpack PROPERTIES
+  OUTPUT_NAME ${CG2O_LIB_PREFIX}solver_eigen_umfpack
   VERSION ${CG2O_LIB_VERSION}
-  SOVERSION ${CG2O_LIB_SOVERSION})
+  SOVERSION ${CG2O_LIB_SOVERSION}
+)
+ 
+ 
 if (APPLE)
   set_target_properties(solver_eigen_umfpack PROPERTIES INSTALL_NAME_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
 endif()
+
 target_compile_features(solver_eigen_umfpack PUBLIC cxx_std_20)
 
-target_include_directories(solver_eigen_umfpack
-  PUBLIC
-    "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
-    "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
-  PRIVATE
-    ${UMFPACK_INCLUDE_DIR}
-)
  
 install(TARGETS solver_eigen_umfpack
   EXPORT ${CG2O_TARGETS_EXPORT_NAME}
@@ -75,9 +68,7 @@ install(TARGETS solver_eigen_umfpack
 )
 
 file(GLOB headers "${CMAKE_CURRENT_SOURCE_DIR}/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
-install(FILES ${headers} DESTINATION ${INCLUDES_INSTALL_DIR}/solvers/umfpack)
-
- 
+install(FILES ${headers} DESTINATION ${INCLUDES_INSTALL_DIR}/solvers/umfpack) 
 
 
 
