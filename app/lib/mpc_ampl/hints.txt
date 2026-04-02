@@ -1,0 +1,10 @@
+
+1- To install AMPL, check to use https://dev.ampl.com/ampl/install.html
+2- In CMakeLists.txt, make sure that AMPLAPI_DIR matching the path to the installed folder
+
+
+
+- AMPL's presolver tries to reduce the size of the problem before sending the information to the designated solver.
+If the presolve phase is taking too much time you can turn it off with something like
+
+ampl.setDblOption('presolve', 0);
