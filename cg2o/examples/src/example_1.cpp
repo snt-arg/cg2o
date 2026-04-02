@@ -67,8 +67,8 @@ OP: min ||xy(1)-a||^2 +  ||xy(2)-b||^2 + ||z-c||^2
 #endif
 
 #ifdef USE_G2O_SOLVERS
+#include "g2o/solvers/cholmod/linear_solver_cholmod.h"
 #include "g2o/solvers/csparse/linear_solver_csparse.h"
-#include "g2o/solvers/cholmod/linear_solver_cholmod.h"  
 #endif
 
 #ifdef USE_ISPD
@@ -109,6 +109,9 @@ int main(int argc, char **argv) {
   int numberOfIterations = (argc > argCount) ? std::atoi(argv[argCount]) : 150;
 
   argCount++;
+  int solverType = (argc > argCount) ? std::atoi(argv[argCount]) : 0;
+
+  argCount++;
   int linearSolverType = (argc > argCount) ? std::atoi(argv[argCount]) : 1;
 
   argCount++;
@@ -130,6 +133,36 @@ int main(int argc, char **argv) {
   int zStart = (argc > argCount) ? std::atoi(argv[argCount]) : -40;
 
 // Initialize optimizer
+#ifdef USE_ISPD
+  cg2o::SparseOptimizerISPD optimizer;
+  void setStepSizeStrategy(int strategy);
+  void setIneqBacktrackingStepMin(double value);
+  void setAuxBacktrackingStepMin(double value);
+
+  void setInitKappaStrategy(int strategy);
+  void setKappaInitial(double value);
+
+  void setUpdateKappaStrategy(int strategy);
+  void setKappaFinal(double value);
+  void setKappaUpdateFactor(double value);
+  void setTau(double value);
+  void setLimitKappaFinal(bool value);
+
+  void setInitSlackStrategy(int strategy);
+  void setSlackVariableInitialIneq(double value);
+
+  void setInitLagrangeStrategy(int strategy);
+  void setLagrangeMultiplierInitialIneq(double value);
+
+  void setIneqPredictionStrategy(int strategy);
+  void setIneqPredictionStepStrategy(int strategy);
+  void setIneqPredictionParam(double value);
+
+  void setKeepAuxPositiveStrategy(int strategy);
+  void setAuxScalingFactor(double value);
+  void setAuxCorrectionValue(double value);
+
+#endif
 #ifdef USE_AL
   cg2o::SparseOptimizerAL optimizer;
   optimizer.setRhoInitial(
@@ -232,23 +265,39 @@ int main(int argc, char **argv) {
 #ifdef USE_G2O_SOLVERS
   case 11:
     std::cout << "Linear solver:        [11]      (CSparse)  " << std::endl;
-    linearSolver = std::make_unique<g2o::LinearSolverCSparse<g2o::BlockSolverX::PoseMatrixType>>();
+    linearSolver = std::make_unique<
+        g2o::LinearSolverCSparse<g2o::BlockSolverX::PoseMatrixType>>();
     break;
   case 12:
     std::cout << "Linear solver:        [12]      (Cholmod)  " << std::endl;
-    linearSolver = std::make_unique<g2o::LinearSolverCholmod<g2o::BlockSolverX::PoseMatrixType>>();
+    linearSolver = std::make_unique<
+        g2o::LinearSolverCholmod<g2o::BlockSolverX::PoseMatrixType>>();
     break;
 #endif
   default:
     throw std::runtime_error("Invalid linear solver type");
     return -1;
   }
+
   blockSolver = std::make_unique<g2o::BlockSolverX>(std::move(linearSolver));
 
-  // Set up the optimization algorithm
-
-  algorithm = std::make_unique<g2o::OptimizationAlgorithmGaussNewton>(
-      std::move(blockSolver));
+  switch (solverType) {
+  case 0:
+    algorithm = std::make_unique<g2o::OptimizationAlgorithmGaussNewton>(
+        std::move(blockSolver));
+    break;
+  case 1:
+    algorithm = std::make_unique<g2o::OptimizationAlgorithmLevenberg>(
+        std::move(blockSolver));
+    break;
+  case 2:
+    algorithm = std::make_unique<g2o::OptimizationAlgorithmDogleg>(
+        std::move(blockSolver));
+    break;
+  default:
+    throw std::runtime_error("Invalid solver type");
+    return -1;
+  }
 
   optimizer.setAlgorithm(algorithm.get());
 
@@ -301,6 +350,10 @@ int main(int argc, char **argv) {
 
   optimizer.setEpsilonConvergence(1e-3); // Stopping criterion for update norm
   optimizer.setEpsilonConstraint(1e-3);
+
+  int terminationCriterion =
+      0; // 0 UpdateNorm   1  NewtonDecrement     2 GradientNorm
+  optimizer.setConvergenceCriterion(terminationCriterion);
 
   optimizer.optimize(numberOfIterations);
 
