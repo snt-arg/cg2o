@@ -26,12 +26,14 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
+#ifndef CG2O_TERMINATION_CRITERIA_H
+#define CG2O_TERMINATION_CRITERIA_H
+
 
 #include "optimizable_graph.h"
 #include <Eigen/Dense>
 #include <functional>
 #include <iostream>
-#include <string>
 #include <unordered_map>
 
 namespace cg2o {
@@ -39,41 +41,61 @@ namespace cg2o {
 class TerminationCriteria {
 public:
   enum class ConvergenceCriterion {
-    UpdateNorm = 0,
+    UpdateNorm = 0, //||update||
+    NewtonDecrement = 1, //||b^T * update||
+    GradientNorm = 2 // ||b||
   };
 
   // Public termination thresholds (accessible in optimizer)
-  double epsilon_convergence = 1e-2; // Stopping criterion for update norm
+  double epsilon_convergence = 1e-2; // Stopping criterion for gradient norm
   double epsilon_constraint =
       1e-2; // Stopping criterion for individual constraint check
 
 private:
-  ConvergenceCriterion _convergenceCriterion = ConvergenceCriterion::UpdateNorm;
+  ConvergenceCriterion _convergenceCriterion = ConvergenceCriterion::NewtonDecrement;
 
   using ConvergenceFunc = std::function<bool(const Eigen::VectorXd &,
                                              const Eigen::VectorXd &, double)>;
   using ConstraintFeasibilityFunc = std::function<bool(double)>;
 
   std::unordered_map<ConvergenceCriterion, ConvergenceFunc>
-      ConvergenceStrategies;
+      convergenceStrategies;
 
 public:
   TerminationCriteria() {
     // Initialize solution acceptance strategies
-    ConvergenceStrategies[ConvergenceCriterion::UpdateNorm] =
+    convergenceStrategies[ConvergenceCriterion::UpdateNorm] =
         [this](const Eigen::VectorXd &, const Eigen::VectorXd &updateVec,
                double epsilon) {
           if (epsilon < 0)
             epsilon = std::abs(epsilon) * epsilon_convergence;
           return updateVec.norm() < epsilon;
         };
+
+    convergenceStrategies[ConvergenceCriterion::NewtonDecrement] =
+        [this](const Eigen::VectorXd &bVec, const Eigen::VectorXd &updateVec,
+               double epsilon) {
+          if (epsilon < 0)
+            epsilon = std::abs(epsilon) * epsilon_convergence;
+          double decrementSquared = updateVec.transpose() * bVec;
+          double decrement = std::abs(decrementSquared);
+          return decrement < epsilon;
+        };
+
+    convergenceStrategies[ConvergenceCriterion::GradientNorm] =
+        [this](const Eigen::VectorXd &bVec, const Eigen::VectorXd &,
+               double epsilon) {
+          if (epsilon < 0)
+            epsilon = std::abs(epsilon) * epsilon_convergence;
+          return bVec.norm() < epsilon;
+        };
   }
 
   // Public methods to evaluate termination conditions
   bool verifyConvergence(const Eigen::VectorXd &bVec,
                          const Eigen::VectorXd &updateVec, double epsilon) {
-    auto it = ConvergenceStrategies.find(_convergenceCriterion);
-    return it != ConvergenceStrategies.end() &&
+    auto it = convergenceStrategies.find(_convergenceCriterion);
+    return it != convergenceStrategies.end() &&
            it->second(bVec, updateVec, epsilon);
   }
 
@@ -118,22 +140,31 @@ public:
   }
 
   // Setters to configure termination criteria
-  void setConvergenceCriteria(ConvergenceCriterion type) {
+  void setConvergenceCriterion(ConvergenceCriterion type) {
     _convergenceCriterion = type;
   }
 
-  void setConvergenceCriterion(int criterion) {
+  void setConvergenceCriterion(int index) {
     /*
     the termination criterion is based on the Newton decrement, the gradient
-    norm, or the update norm where GradientNorm =0
+    norm, or the update norm where GradientNorm =0, NewtonDecrement =1 ,
+    UpdateNorm = 2
 
     */
-    _convergenceCriterion = static_cast<ConvergenceCriterion>(criterion);
+    _convergenceCriterion = static_cast<ConvergenceCriterion>(index);
 
-    if (criterion == 0) {
+    if (index == 0) {
       std::cout << "The stopping criterion of the update convergence is "
                    "Gradient Norm."
                 << std::endl;
+    } else if (index == 1) {
+      std::cout << "The stopping criterion of the update convergence is Newton "
+                   "Decrement."
+                << std::endl;
+    } else if (index == 2) {
+      std::cout
+          << "The stopping criterion of the update convergence is Update Norm."
+          << std::endl;
     } else {
       throw std::invalid_argument(
           "Invalid stopping criterion. Valid options are 0:Gradient Norm, "
@@ -143,3 +174,6 @@ public:
 };
 
 } // namespace cg2o
+
+
+#endif // CG2O_TERMINATION_CRITERIA_H
