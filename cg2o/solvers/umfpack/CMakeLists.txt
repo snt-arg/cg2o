@@ -56,7 +56,7 @@ set_target_properties(solver_eigen_umfpack PROPERTIES
 if (APPLE)
   set_target_properties(solver_eigen_umfpack PROPERTIES INSTALL_NAME_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
 endif()
-target_compile_features(solver_eigen_umfpack PUBLIC cxx_std_17)
+target_compile_features(solver_eigen_umfpack PUBLIC cxx_std_20)
 
 target_include_directories(solver_eigen_umfpack
   PUBLIC

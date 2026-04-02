@@ -53,7 +53,7 @@ SOVERSION ${CG2O_LIB_SOVERSION})
 if (APPLE)
   set_target_properties(solver_eigen_pardiso PROPERTIES INSTALL_NAME_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
 endif()
-target_compile_features(solver_eigen_pardiso PUBLIC cxx_std_17)
+target_compile_features(solver_eigen_pardiso PUBLIC cxx_std_20)
 
 
 

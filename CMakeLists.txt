@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.22)
 project(cg2o LANGUAGES CXX)
 
 
+set(CMAKE_CXX_STANDARD 20)
+
 
 set(CMAKE_LEGACY_CYGWIN_WIN32 0)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment target")
@@ -35,12 +37,12 @@ set(INCLUDES_INSTALL_DIR ${CMAKE_INSTALL_INCLUDEDIR}/cg2o)
 #----------------------------------------------------------------------------------------
 ##options 
 # Configuration option: Default to ISPD optimizer, but allow switching to AL or IPM
-option(CG2O_BUILD_EXAMPLES "Build the examples" ON)
-option(USE_G2O_SOLVERS "Enable g2o-based solvers (links g2o + csparse and cholmod)" ON)
+option(CG2O_BUILD_EXAMPLES "Build the examples" OFF)
+ option(USE_G2O_SOLVERS "Enable g2o-based solvers (links g2o + csparse and cholmod)" ON)
 option(CG2O_BUILD_PARDISO "allow using the Paradiso solver" ON)
 option(CG2O_BUILD_EIGEN_SOLVERS "allow building the Eigen solver" ON)
 
-set(CG2O_OPTIMIZER "BIPM" CACHE STRING "Optimizer type: ISPD, AL,  or BIPM")
+set(CG2O_OPTIMIZER "ISPD" CACHE STRING "Optimizer type: ISPD, AL,  or BIPM")
 set_property(CACHE CG2O_OPTIMIZER PROPERTY STRINGS ISPD AL BIPM)
 
 
@@ -127,7 +129,10 @@ if(CG2O_BUILD_PARDISO)
         -lmkl_rt
         ${THREAD_LIB}
         -lpthread -lm -ldl
-    )  
+    )
+    install(TARGETS MKL
+      EXPORT ${CG2O_TARGETS_EXPORT_NAME}
+    )
     set(CMAKE_BUILD_RPATH "${MKL_LIBRARY_DIR}")
 endif(CG2O_BUILD_PARDISO)
 
@@ -182,10 +187,5 @@ install(FILES
   ${CMAKE_CURRENT_BINARY_DIR}/cg2oConfigVersion.cmake
   DESTINATION ${CG2O_CONFIG_INSTALL_DIR}
 )
-
-
-
-
-
 
 

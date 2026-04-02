@@ -31,7 +31,7 @@ set_target_properties(core PROPERTIES
   SOVERSION ${CG2O_LIB_SOVERSION})
 target_link_libraries(core PUBLIC  g2o::core ${CG2O_EIGEN3_EIGEN_TARGET})
 target_link_libraries(core PRIVATE g2o::stuff)
-target_compile_features(core PUBLIC cxx_std_17)
+target_compile_features(core PUBLIC cxx_std_20)
 
 if (APPLE)
   set_target_properties(core PROPERTIES INSTALL_NAME_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
