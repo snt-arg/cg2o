@@ -142,7 +142,6 @@ public:
   void setLagrangeMultiplierInitial(double lagrangeMultiplierInitial);
   void setEpsilonConstraint(double epsilon);
   void setEpsilonConvergence(double epsilon);
-  void setAlgorithmEq(std::string algType);
 
   bool getWarmStartLagrangeMultiplierFlag();
   int getInnerIterationsMax();
