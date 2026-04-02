@@ -1,0 +1,23 @@
+# AccControlMPC.action
+
+# Goal (Input to Action)
+int32 horizon_length         # Target prediction horizon length
+float32 v_p                    # Preceding vehicle velocity (m/s)
+float32 v_h                    # Host vehicle velocity (m/s)
+float32 a_p                    # Preceding vehicle acceleration (m/s^2)
+float32 a_p_weighted           # Preceding vehicle acceleration with average (m/s^2)
+float32 d_h                    # Distance between vehicles (m)
+float32 force_prev             # the last applied force to the car Newton
+---
+# Result (Output from Action)
+float32 acc_input_force        # Calculated input force
+int32 num_iterations           # Number of iterations
+float32 cost_value             # Cost value from optimization
+bool flag_solved               # Flag indicating if solution was found
+float32 solve_time 	          # The solver time 
+float32 desired_velocity       # desired_velocity
+float32 desired_acceleration    #desired_acceleration
+
+---
+# Feedback
+float32 progress               # Feedback on progress (e.g., 0.0 to 1.0)
