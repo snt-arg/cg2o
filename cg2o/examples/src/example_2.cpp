@@ -28,19 +28,9 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
 /*
-     minimize     (xy(1)-2)^2 +  (xy(2)-9)^2 + (z-50)^2
-     subject to   xy(2) + z    == 3, xy(1) + xy(2)    == 2.5,
-                   xy(0)<= 1,  y<= 4, z<= 5
-%
- note that xy(1) = x, and xy(2) = y, z is a scalar variable
-% The answer is x = 1, y = 1.5, z = 1.5
-
-OP:  
-     min ||xy - meas||^2_gamma + ||z-c||^2
-     s.t.    xy(2) + z -3 == 0, 
-             xy(1)+ xy(2) - 2.5 == 2.5  
-             xy - {1, 4} <= 0 
-             z - 5 <= 0
+     minimize     0.5 * ||x1-1||^2 + 0.5 * ||x2-1||^2
+    subject to    x1^2 + x2^2 - 1 = 0
+                  4*x1^2 + 0.25*x2^2 - 1 <= 0
 */
 
 #include <g2o/core/block_solver.h>
@@ -54,27 +44,6 @@ OP:
 
 #include "cg2o/solvers/umfpack/linear_solver_eigen_umfpack_lu.h" // the default solver in cg2o
 
-#ifdef CG2O_BUILD_PARDISO
-#include "cg2o/solvers/pardiso/linear_solver_eigen_pardiso_lu.h"
-#endif
-
-#ifdef CG2O_BUILD_EIGEN_SOLVERS
-#include "cg2o/solvers/eigen/linear_solver_eigen_bicgstab.h"
-#include "cg2o/solvers/eigen/linear_solver_eigen_dense_full_lu.h"
-#include "cg2o/solvers/eigen/linear_solver_eigen_dense_partial_lu.h"
-#include "cg2o/solvers/eigen/linear_solver_eigen_dense_qr.h"
-#include "cg2o/solvers/eigen/linear_solver_eigen_ldlt.h"
-#include "cg2o/solvers/eigen/linear_solver_eigen_lscg.h"
-#include "cg2o/solvers/eigen/linear_solver_eigen_lu.h"
-#include "cg2o/solvers/eigen/linear_solver_eigen_qr.h"
-#include "cg2o/solvers/eigen/linear_solver_eigen_svd.h"
-#endif
-
-#ifdef USE_G2O_SOLVERS
-#include "g2o/solvers/cholmod/linear_solver_cholmod.h"
-#include "g2o/solvers/csparse/linear_solver_csparse.h"
-#endif
-
 #ifdef USE_ISPD
 #include "cg2o/core/sparse_optimizer_ispd.h" // using the Augmented Lagrangian
 #endif
@@ -85,19 +54,18 @@ OP:
 #include "cg2o/core/sparse_optimizer_bipm.h" // Barrier interior point method
 #endif
 
-#include "example_1_vertices_edges.h" // for defining the edges
-#include <g2o/solvers/cholmod/linear_solver_cholmod.h>
+#include "example_2_vertices_edges.h" // for defining the edges
 
 int main(int argc, char **argv) {
-  std::cout << "OP: min ||xy(1)-a||^2 +  ||xy(2)-b||^2 + ||z-c||^2 s.t.    "
-               "xy(2) + z == 3, xy(1) + xy(2) == 2.5, xy <= {1, 4}   z <= 5"
+  std::cout << "OP: min 0.5 * ||x1-1||^2 + 0.5 * ||x2-1||^2 s.t.    "
+               "x1^2 + x2^2 - 1 = 0  ,  4*x1^2 + 0.25*x2^2 - 1 <= 0 "
             << std::endl;
   std::cout
       << "Usage: " << argv[0]
       << "solverType:<0=GN,1=LV,2=DL> iterations<int> a<int> b<int> c<int>"
       << std::endl;
   std::cout << "x_start<int> y_start<int> z_start<int> " << std::endl;
-  std::cout << "./example 0 150 2 9 50 -10 -10 -10" << std::endl;
+  std::cout << "./example -0.2  0 0 150" << std::endl;
 
 #ifdef USE_ISPD
   std::cout << "The ISPD Solver is Used\n";
@@ -111,30 +79,11 @@ int main(int argc, char **argv) {
 
   int argCount = 1;
   int numberOfIterations = (argc > argCount) ? std::atoi(argv[argCount]) : 150;
-
   argCount++;
   int solverType = (argc > argCount) ? std::atoi(argv[argCount]) : 0;
-
+  double xStart = (argc > argCount) ? std::atof(argv[argCount]) : .1; //change to 1 
   argCount++;
-  int linearSolverType = (argc > argCount) ? std::atoi(argv[argCount]) : 1;
-
-  argCount++;
-  int a = (argc > argCount) ? std::atoi(argv[argCount]) : 2;
-
-  argCount++;
-  int b = (argc > argCount) ? std::atoi(argv[argCount]) : 9;
-
-  argCount++;
-  int c = (argc > argCount) ? std::atoi(argv[argCount]) : 50;
-
-  argCount++;
-  int xStart = (argc > argCount) ? std::atoi(argv[argCount]) : -40;
-
-  argCount++;
-  int yStart = (argc > argCount) ? std::atoi(argv[argCount]) : -20;
-
-  argCount++;
-  int zStart = (argc > argCount) ? std::atoi(argv[argCount]) : -40;
+  double yStart = (argc > argCount) ? std::atof(argv[argCount]) : .1;//change to -2 to see the effect 
 
 // Initialize optimizer
 #ifdef USE_ISPD
@@ -204,84 +153,8 @@ int main(int argc, char **argv) {
       linearSolver;
   std::unique_ptr<g2o::OptimizationAlgorithm> algorithm;
 
-  switch (linearSolverType) {
-  case 0:
-    std::cout << "Linear solver:        [0]     (EigenUmfPackLU)" << std::endl;
-    linearSolver = std::make_unique<
-        cg2o::LinearSolverEigenUmfPackLU<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-#ifdef CG2O_BUILD_PARDISO
-  case 1:
-    std::cout << "Linear solver:        [1]     (EigenPardisoLU)" << std::endl;
-    linearSolver = std::make_unique<
-        cg2o::LinearSolverEigenPardisoLU<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-#endif
-#ifdef CG2O_BUILD_EIGEN_SOLVERS
-  case 2:
-    std::cout << "Linear solver:        [2]      (EigenLU)  " << std::endl;
-    linearSolver = std::make_unique<
-        cg2o::LinearSolverEigenLU<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-  case 3:
-    std::cout << "Linear solver:        [3]      (EigenQR)  " << std::endl;
-    linearSolver = std::make_unique<
-        cg2o::LinearSolverEigenLDLT<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-  case 4:
-    std::cout << "Linear solver:        [4]      (EigenQR)  " << std::endl;
-    linearSolver = std::make_unique<
-        cg2o::LinearSolverEigenQR<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-  case 5:
-    std::cout << "Linear solver:        [5]     (EigenDensePartialLU)"
-              << std::endl;
-    linearSolver = std::make_unique<cg2o::LinearSolverEigenDensePartialLU<
-        g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-  case 6:
-    std::cout << "Linear solver:        [6]     (EigenDenseFullLU) "
-              << std::endl;
-    linearSolver = std::make_unique<cg2o::LinearSolverEigenDenseFullLU<
-        g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-  case 7:
-    std::cout << "Linear solver:        [7]     (EigenDenseQR)  " << std::endl;
-    linearSolver = std::make_unique<
-        cg2o::LinearSolverEigenDenseQR<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-  case 8:
-    std::cout << "Linear solver:        [8]      (EigenSVD)  " << std::endl;
-    linearSolver = std::make_unique<
-        cg2o::LinearSolverEigenSVD<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-  case 9:
-    std::cout << "Linear solver:        [9]      (BiCGSTAB)  " << std::endl;
-    linearSolver = std::make_unique<
-        cg2o::LinearSolverEigenBiCGSTAB<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-  case 10:
-    std::cout << "Linear solver:        [10]      (BiCGSTAB)  " << std::endl;
-    linearSolver = std::make_unique<
-        cg2o::LinearSolverEigenLSCG<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-#endif
-#ifdef USE_G2O_SOLVERS
-  case 11:
-    std::cout << "Linear solver:        [11]      (CSparse)  " << std::endl;
-    linearSolver = std::make_unique<
-        g2o::LinearSolverCSparse<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-  case 12:
-    std::cout << "Linear solver:        [12]      (Cholmod)  " << std::endl;
-    linearSolver = std::make_unique<
-        g2o::LinearSolverCholmod<g2o::BlockSolverX::PoseMatrixType>>();
-    break;
-#endif
-  default:
-    throw std::runtime_error("Invalid linear solver type");
-    return -1;
-  }
+  linearSolver = std::make_unique<
+       cg2o::LinearSolverEigenUmfPackLU<g2o::BlockSolverX::PoseMatrixType>>();
 
   blockSolver = std::make_unique<g2o::BlockSolverX>(std::move(linearSolver));
 
@@ -311,41 +184,21 @@ int main(int argc, char **argv) {
   xy->setEstimate(Eigen::Vector2d(xStart, yStart)); // initial estimate
   optimizer.addVertex(xy.get());
 
-  // Create and add vertices
-  auto *z = new VertexZ();
-  z->setId(1);
-  z->setEstimate(zStart);
-  optimizer.addVertex(z);
-
-  // Add the cost edgeXY to the optimizer: |xy(1)-a||^2 +  ||xy(2)-b||^2
+  // Add the cost edgeXY to the optimizer: .5*||xy(1)-1||^2 + 0.5*||xy(2)-1||^2
   auto edgeXY = std::make_shared<EdgeXY>();
   edgeXY->setVertex(0, xy.get());
-  edgeXY->setMeasurement(Eigen::Vector2d(a, b)); //
-  edgeXY->setInformation(Eigen::Matrix2d::Identity());
+  edgeXY->setMeasurement(Eigen::Vector2d(1, 1)); //
+  edgeXY->setInformation(Eigen::Matrix2d::Identity() * 0.5);
   optimizer.addEdge(edgeXY.get());
 
-  // Add the cost edgeZ to the optimizer: ||z-c||^2
-  auto edgeZ = std::make_shared<EdgeZ>();
-  edgeZ->setVertex(0, z);
-  edgeZ->setMeasurement(c);
-  edgeZ->setInformation(Eigen::Matrix<double, 1, 1>::Identity());
-  optimizer.addEdge(edgeZ.get());
-
-  // add inequality edge xy<= {1,4}
   auto edgeIneqXY = std::make_shared<EdgeIneqXY>(); //
   edgeIneqXY->setVertex(0, xy.get());
   optimizer.addEdgeIneq(edgeIneqXY.get());
 
-  // add inequality edge z<= 5
-  auto edgeIneqZ = std::make_shared<EdgeIneqZ>(); // (y - b)^2
-  edgeIneqZ->setVertex(0, z);
-  optimizer.addEdgeIneq(edgeIneqZ.get());
-
-  // add equaity edge xy(2) + z == 3, xy(1) + xy(2) == 2.5
+  // add equaity edge  x1^2 + x2^2 - 1 = 0
   auto *edgeEq = new EdgeEq();
   edgeEq->setVertexLagrangeMultiplierId(10);
   edgeEq->setVertex(0, xy.get());
-  edgeEq->setVertex(1, z);
   optimizer.addEdgeEq(edgeEq);
 
   // Optimize
@@ -355,15 +208,10 @@ int main(int argc, char **argv) {
   optimizer.setEpsilonConvergence(1e-3); // Stopping criterion for update norm
   optimizer.setEpsilonConstraint(1e-3);
 
-  int terminationCriterion =
-      0; // 0 UpdateNorm   1  NewtonDecrement     2 GradientNorm
-  optimizer.setConvergenceCriterion(terminationCriterion);
-
   optimizer.optimize(numberOfIterations);
 
   // Output the results
   std::cout << "Optimized x: " << xy->estimate().transpose() << std::endl;
-  std::cout << "Optimized z: " << z->estimate() << std::endl;
 
   // std::cout << "Optimized nu: " << nu->estimate() << std::endl;
 

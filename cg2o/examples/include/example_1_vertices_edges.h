@@ -94,8 +94,8 @@ public:
 
   void linearizeOplus() override {
     auto &J_v0 = std::get<0>(_jacobianOplus); // Jacobian of edge for vertex XY
-    J_v0 << 1, 0,                             // J(e_0,v_0[0]) J(e_0,v_0[1])
-        0, 1;                                 // J(e_1,v_0[0]) J(e_1,v_0[1])
+    J_v0 << 1, 0,                                 // J(e_0,v_0[0]) J(e_0,v_0[1])
+            0, 1;                                 // J(e_1,v_0[0]) J(e_1,v_0[1])
   }
 
   virtual bool read(std::istream &in) override {
@@ -154,9 +154,9 @@ public:
                       .topRows(D); // vertex xy , v_0[0] = xy[0], v_0[1] = xy[1]
     auto &&J_v1 = std::get<1>(_jacobianOplus).topRows(D); // vertex z = v_1
     J_v0 << 0, 1, //  J(e_0,v_0[0])  J(e_0,v_0[1])
-        1, 1;     //  J(e_1,v_0[0])  J(e_1,v_0[1])
+            1, 1;     //  J(e_1,v_0[0])  J(e_1,v_0[1])
     J_v1 << 1,    //  J(e_0,v_1)
-        0;        //  J(e_1,v_1)
+            0;        //  J(e_1,v_1)
   }
 };
 
