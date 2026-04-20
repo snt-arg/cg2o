@@ -226,12 +226,7 @@ public:
   SparseOptimizerISPD();  // Default constructor
   ~SparseOptimizerISPD(); // Virtual destructor
 
-  // Function to construct the quadratic form implementation for Augmented
-  // Lagrangian Eqaulity Algorithm
-  template <int D, typename E, typename... VertexTypes>
-  void
-  constructQuadraticFormEq(BaseFixedSizedEdgeEq<D, E, VertexTypes...> &edge);
-
+ 
   template <int D, typename E, typename... VertexTypes>
   bool addEdgeEqImpl(BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e);
   /**

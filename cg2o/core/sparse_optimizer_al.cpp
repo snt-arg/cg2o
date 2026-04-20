@@ -44,7 +44,6 @@ using namespace std;
 
 // Default constructor
 SparseOptimizerAL::SparseOptimizerAL() {
-  _lagrange_multiplier_initial_eq = 0;
   _num_inner_iterations_max = 10;
 }
 

@@ -167,9 +167,9 @@ protected:
   std::vector<double> _alphaBacktracking;
   double _alpha = 0.9;
 
-  double _lagrange_multiplier_initial_eq; // Initial value for the Lagrangian
+  double _lagrange_multiplier_initial_eq = 0.0; // Initial value for the Lagrangian
                                           // vertex
-  int _num_inner_iterations_max; // Maximum number of inner iterations for the
+  int _num_inner_iterations_max = 5; // Maximum number of inner iterations for the
                                  // AL and BIPM algorithm
   bool _warm_start_lagrange_multiplier_eq_flag =
       false; // Flag to indicate if the Lagrangian multiplier should be warmed

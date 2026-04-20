@@ -397,29 +397,7 @@ void SparseOptimizerISPD::initializeSlackVariable(
 };
 
 
-template <int D, typename E, typename... VertexTypes>
-void SparseOptimizerISPD::constructQuadraticFormEq(
-    BaseFixedSizedEdgeEq<D, E, VertexTypes...> &edge) {
 
-  auto error = edge.error();
-  auto gamma = edge.lagrangeMultiplier();
-  auto rho = edge.rho();
-  Eigen::Matrix<double, 2 * D, 1> weightedError =
-      Eigen::Matrix<double, 2 * D, 1>::Zero();
-  Eigen::DiagonalMatrix<double, 2 * D> omega_matrix =
-      Eigen::DiagonalMatrix<double, 2 * D>(
-          Eigen::Matrix<double, 2 * D, 1>::Zero());
-  for (int i = 0; i < D; ++i) {
-    omega_matrix.diagonal()[i] = rho[i];
-    weightedError[i] =
-        -(omega_matrix.diagonal()[i] * error[i] + 0.5 * gamma[i]);
-  }
-
-  static const std::size_t _nr_of_vertices =
-      sizeof...(VertexTypes) + 1; // add the lagrange multiplier vertex
-  edge.constructQuadraticFormNs(omega_matrix, weightedError,
-                                std::make_index_sequence<_nr_of_vertices>());
-}
 
 template <int D, typename E, typename... VertexTypes>
 bool SparseOptimizerISPD::addEdgeEqImpl(

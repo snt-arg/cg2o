@@ -43,7 +43,6 @@ using namespace std;
 
 // Default constructor
 SparseOptimizerBIPM::SparseOptimizerBIPM() {
-  _lagrange_multiplier_initial_eq = 0;
   _num_inner_iterations_max = 100;
 }
 
