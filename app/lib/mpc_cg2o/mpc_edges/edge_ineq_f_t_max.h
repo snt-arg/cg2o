@@ -14,7 +14,7 @@ public:
 
   EdgeIneq_f_t_max(int k, std::shared_ptr<MPCParameters> param);
   void computeIneq() override;
-#ifdef USE_EXACT_JACOBIANS
+#ifndef MPC_USE_NUMERICAL_JACOBIAN
   void linearizeOplus() override; // optional
 #endif
 

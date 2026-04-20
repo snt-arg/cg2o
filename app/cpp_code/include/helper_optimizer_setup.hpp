@@ -27,11 +27,8 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
-
-
 #ifndef HELPER_OPTIMIZER_SETUP_H
 #define HELPER_OPTIMIZER_SETUP_H
-
 
 #include <g2o/core/block_solver.h>
 #include <g2o/solvers/dense/linear_solver_dense.h>
@@ -46,23 +43,22 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include <numeric>
 #include <vector>
 
-#ifdef USE_G2O_SOLVERS
+#ifdef MPC_USE_G2O_SOLVERS
 #include <g2o/solvers/cholmod/linear_solver_cholmod.h>
 #include <g2o/solvers/csparse/linear_solver_csparse.h>
 #endif
 
-
-#ifdef USE_SOLVERS_UMFPACK
+#ifdef MPC_USE_SOLVERS_UMFPACK
 #include "cg2o/solvers/umfpack/linear_solver_eigen_umfpack_lu.h"
-#endif  
+#endif
 
-#ifdef USE_SOLVERS_PARDISO
+#ifdef MPC_USE_SOLVERS_PARDISO
 #include "cg2o/solvers/pardiso/linear_solver_eigen_pardiso_lu.h"
 #endif
- 
-#ifdef USE_SOLVERS_EIGEN
-#include "cg2o/solvers/eigen/linear_solver_eigen_dense_full_lu.h"
+
+#ifdef MPC_USE_SOLVERS_EIGEN
 #include "cg2o/solvers/eigen/linear_solver_eigen_bicgstab.h"
+#include "cg2o/solvers/eigen/linear_solver_eigen_dense_full_lu.h"
 #include "cg2o/solvers/eigen/linear_solver_eigen_dense_partial_lu.h"
 #include "cg2o/solvers/eigen/linear_solver_eigen_dense_qr.h"
 #include "cg2o/solvers/eigen/linear_solver_eigen_ldlt.h"
@@ -95,28 +91,27 @@ void print_resutls(std::vector<double> &results, int N) {
             << resutls.segment(6 * (N + 1) - 4, N).transpose() << "  \n";
   std::cout << "└─────────┴──────────────────────────────────\n";
 }
-
 void setupLinearSolver(
     int linearSolverType,
     std::unique_ptr<g2o::LinearSolver<g2o::BlockSolverX::PoseMatrixType>>
         &linearSolver) {
   // Set up the linear solver
- switch (linearSolverType) {
-  #ifdef USE_SOLVERS_PARDISO
+  switch (linearSolverType) {
+#ifdef MPC_USE_SOLVERS_UMFPACK
   case 0:
     std::cout << "Linear solver:        [0]     (EigenUmfPackLU)" << std::endl;
     linearSolver = std::make_unique<
         cg2o::LinearSolverEigenUmfPackLU<g2o::BlockSolverX::PoseMatrixType>>();
     break;
-  #endif
-#ifdef USE_SOLVERS_PARDISO
+#endif
+#ifdef MPC_USE_SOLVERS_PARDISO
   case 1:
     std::cout << "Linear solver:        [1]     (EigenPardisoLU)" << std::endl;
     linearSolver = std::make_unique<
         cg2o::LinearSolverEigenPardisoLU<g2o::BlockSolverX::PoseMatrixType>>();
     break;
 #endif
-#ifdef USE_SOLVERS_EIGEN
+#ifdef MPC_USE_SOLVERS_EIGEN
   case 2:
     std::cout << "Linear solver:        [2]      (EigenLU)  " << std::endl;
     linearSolver = std::make_unique<
@@ -165,7 +160,7 @@ void setupLinearSolver(
         cg2o::LinearSolverEigenLSCG<g2o::BlockSolverX::PoseMatrixType>>();
     break;
 #endif
-#ifdef USE_G2O_SOLVERS
+#ifdef MPC_USE_G2O_SOLVERS
   case 11:
     std::cout << "Linear solver:        [11]      (CSparse)  " << std::endl;
     linearSolver = std::make_unique<
@@ -181,7 +176,6 @@ void setupLinearSolver(
     throw std::runtime_error("Invalid linear solver type");
     return;
   }
-
 }
 
 void setupAlgorithm(const std::string &solverType,
@@ -245,9 +239,13 @@ void oneTimeSimulationG2O(auto &param, auto &mpc, auto &optimizer,
 double g2o_compute_input(auto &mpc, auto &optimizer, int numberOfIterations,
                          double &compute_time_ms, double &num_iterations,
                          double &cost_level) {
+#ifdef MPC_FEASIBLE_INITIALIZATION
+  // Set a feasible initial guess for the optimization
+  mpc->setInitialGuess(false);
+#else
   mpc->setFixedInitialGuess(10.0); // Set the initial guess
                                    //    mpc->setInitialGuess(false);
-
+#endif
   //  print_resutls(results, mpcHorizon);
   auto start_time = std::chrono::high_resolution_clock::now();
   num_iterations = optimizer->optimize(numberOfIterations);

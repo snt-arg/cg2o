@@ -1,5 +1,5 @@
 mpc:
-  horizon: 30
+  horizon: 3
   simulation_mode: 2 # 1 one-time simulation, 2 closed loop simulation 
   loop_size : 5000 # number of MPC loops to be executed in closed loop simulation, use infinity for entire driving cycle
   number_of_iterations: 100
@@ -9,9 +9,9 @@ unconstrained_solver:
   type: "GN"        # GN/LV/DL
 
 linear_solver:
-  type: 1  # 0 eigenumfpacklu, 1 EigenPardisoLU, 2 EigenLU, 3 EigenLDLT, 4 EigenQR, 5 EigenDensePartialLU,
+  type: 2  # 0 eigenumfpacklu, 1 EigenPardisoLU, 2 EigenLU, 3 EigenLDLT, 4 EigenQR, 5 EigenDensePartialLU,
            # 6 EigenDenseFullLU, 7 EigenDenseQR, 8 EigenSVD, 9 EigenBiCGSTAB, 10 EigenLSCG, 11 CSparse, 12 Cholmod,
-             
+                          
                             
  
 inequality_algorithm: "ispd"   # "al" or "bipm" or "ispd"
@@ -19,7 +19,8 @@ equality_algorithm: "gn"       # "gn" or "al"
 
 general_settings:
   verbose: 0
-  max_num_inner_iterations:  5
+  num_inner_iterations_max:  10
+  alpha_backtracking: -1
   lagrange_multiplier_initial_eq: 0.0
   rho_initial_eq: 0.5
   rho_min_eq: 0.55
@@ -30,9 +31,9 @@ general_settings:
 
 
 bipm_settings:
-  kappa0: 0.2
-  t_final: 1500.0
-  nu: 8.0
+  kappa_initial: 0.5
+  kappa_final: 1500.0
+  kappa_update_factor: 8.0
 
 ispd_settings: 
   linear_system_strategy: 0 # 0:ISPD, 1: barrier-slack 2: PD 3: BIPM 
@@ -41,10 +42,10 @@ ispd_settings:
   ineq_backtracking_step_min: 10e-1
   aux_backtracking_step_min: 8e-1
   
-  _init_kappa_strategy: 0 # constant  = _kappa0, 1: based on duality gap
+  _init_kappa_strategy: 0 # constant  = _kappa_initial, 1: based on duality gap
   kappa_initial: 1e-3
-  update_kappa_strategy: 0 # 0:check if t>=t_memory, 1: check if t>=_kappa0;  2: accept what comes from the duality gap; 3: by fixed nu
-  nu: 15.0
+  update_kappa_strategy: 0 # 0:check if t>=t_memory, 1: check if t>=_kappa_initial;  2: accept what comes from the duality gap; 3: by fixed nu
+  kappa_update_factor: 15.0
   kappa_final: 1500.0
   tau: 1.4 # factor to increase t based on previous t value if _update_kappa_strategy ==0
   limit_kappa_final: 1 # (bool) limit kappa to kappa_final
@@ -52,7 +53,7 @@ ispd_settings:
   init_slack_strategy: 0 # 0: max(-g(x0),_slack_variable_initial_ineq, 1: max(abs(g(x0)),_slack_variable_initial_ineq,  2: constant  = _slack_variable_initial_ineq
   slack_variable_initial_ineq: 10.0 
   
-  init_lagrange_strategy: 0 #  0:  _lagrange_multiplier_initial_ineq 1: max(1/(kappa0*slack),_lagrange_multiplier_initial_ineq) kappa0,
+  init_lagrange_strategy: 0 #  0:  _lagrange_multiplier_initial_ineq 1: max(1/(kappa_initial*slack),_lagrange_multiplier_initial_ineq) kappa_initial,
   lagrange_multiplier_initial_ineq: 10.0
   
 

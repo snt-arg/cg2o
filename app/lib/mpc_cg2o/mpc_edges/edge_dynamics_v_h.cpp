@@ -71,7 +71,7 @@ void EdgeDynamics_v_h::computeEq() {
   }
 }
 
-#ifdef USE_EXACT_JACOBIANS
+#ifndef MPC_USE_NUMERICAL_JACOBIAN
 void EdgeDynamics_v_h::linearizeOplus() {
   // The derivative of _eq[0]  with respect to the vertex[0] (v_h_k)  is ...
   // [ -(1 - delta_t / m_eq * p2)] if linear dynamics  or [- (1 + delta_t / m_eq

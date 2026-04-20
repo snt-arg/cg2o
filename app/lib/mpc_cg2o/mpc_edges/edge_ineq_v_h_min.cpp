@@ -21,7 +21,7 @@ void EdgeIneq_v_h_min::computeIneq() {
   }
 }
 
-#ifdef USE_EXACT_JACOBIANS
+#ifndef MPC_USE_NUMERICAL_JACOBIAN
 void EdgeIneq_v_h_min::linearizeOplus() {
   // The derivative of _ineq[0]  with respect to the vertex[0] (v_h_kp1)  is -1
   // Set the Jacobian's value for the scalar relationship

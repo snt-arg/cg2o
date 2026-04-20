@@ -1,27 +1,56 @@
 /*
+Copyright (c) 2023, University of Luxembourg
+All rights reserved.
+
+Redistributions and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+*/
+
+/*
  * Test the ACC MPC
  */
 
-#include <cmath>
-#include <cstdlib>
-
-#include <Eigen/Core>
-#include <chrono>
-#include <iostream>
-#include <memory>
-#include <regex>
-#include <string>
-#include <thread>
-#include <unistd.h>
-#include <vector>
-
+#include "mpc_formulation.h"
+#include "mpc_parameters.h"
 #include <Eigen/src/Core/GenericPacketMath.h>
 #include <Eigen/src/Core/Map.h>
 #include <Eigen/src/Core/Matrix.h>
 #include <Eigen/src/Core/products/Parallelizer.h>
 #include <Eigen/src/Core/util/XprHelper.h>
+#include <cmath>
+#include <cstdlib>
+#include <g2o/core/base_fixed_sized_edge.h>
 
-#include "g2o/core/block_solver.h"
+#include <Eigen/Core>
+#include <iostream>
+#include <memory>
+#include <regex>
+#include <string>
+#include <unistd.h>
+#include <vector>
+
+#include <data_saver.hpp>
 
 #ifdef USE_AL
 #include "cg2o/core/sparse_optimizer_al.h"
@@ -35,10 +64,6 @@
 
 #include "helper_config.hpp"
 #include "helper_optimizer_setup.hpp"
-
-#include "mpc_cg2o/mpc_formulation.h"
-#include "mpc_cg2o/mpc_parameters.h"
-#include <data_saver.hpp>
 
 int main(int argc, char **argv) {
   std::cout << "MPC-based ACC" << std::endl;
@@ -62,11 +87,13 @@ int main(int argc, char **argv) {
                              ? std::atoi(argv[argCount])
                              : getIntValue(config["linear_solver"], "type");
 
+  argCount++;
+  int mpcHorizon = (argc > argCount) ? std::atoi(argv[argCount])
+                                     : getIntValue(config["mpc"], "horizon");
+
   std::filesystem::path current_path = std::filesystem::current_path();
   // std::cout << "Current path: " << current_path << std::endl;
   // Parse command-line arguments
-
-  int mpcHorizon = getIntValue(config["mpc"], "horizon"); //  horizon length
 
   std::string solverType =
       getStringValue(config["unconstrained_solver"], "type");
@@ -92,8 +119,8 @@ int main(int argc, char **argv) {
   std::string AlgEqType = "al"; // Change to string, default "al"
   std::string AlIneqType = "AL";
   auto optimizer = std::make_shared<cg2o::SparseOptimizerAL>();
-  auto mpc =
-      std::make_shared<cg2o::mpc::MPCFormulation<cg2o::SparseOptimizerAL>>(
+  auto mpc = std::main ampl coloum do you know how data is saved
+      ke_shared<cg2o::mpc::MPCFormulation<cg2o::SparseOptimizerAL>>(
           mpcHorizon, optimizer, param);
 
 #endif
@@ -106,7 +133,7 @@ int main(int argc, char **argv) {
           mpcHorizon, optimizer, param);
 #endif
 #ifdef USE_ISPD
-  std::string AlgEqType = "gn";
+  std::string AlgEqType = "gn"; // Change to string, default "gn"
   std::string AlIneqType = "ISPD";
   auto optimizer = std::make_shared<cg2o::SparseOptimizerISPD>();
   auto mpc =
@@ -115,7 +142,6 @@ int main(int argc, char **argv) {
 #endif
   optimizer->setAlgorithm(algorithm.get());
   configureMPCParameters(config, param, optimizer);
-
   mpc->setupMPC();
   // Update parameters
   // Set the initial guess
@@ -128,7 +154,6 @@ int main(int argc, char **argv) {
 
   int terminationCriterion =
       1; // 0 UpdateNorm   1  NewtonDecrement     2 GradientNorm
-
   optimizer->setConvergenceCriterion(terminationCriterion);
 
   optimizer->initializeOptimization();
@@ -174,12 +199,7 @@ int main(int argc, char **argv) {
     }
 
     for (int counter = 0; counter <= solvers_to_loop; counter++) {
-#ifdef MPC_AMPL_LANGUAGE
-      if (solvers_to_loop == 8) {
-        ampl_solver = counter;
-        setSolverOptions(op_ampl, ampl_solver, numberOfIterations);
-      }
-#endif
+
       double compute_time_ms = 0.01;
       double num_iterations = 0.0;
       double cost_level = 0.0;
@@ -207,8 +227,6 @@ int main(int argc, char **argv) {
         // Extract the input after the optimization is done
         double num_iterations_memory = 0.0;
 
-#if (!(defined(MPC_AMPL_LANGUAGE) || defined(MPC_CASADI_TOOL))) ||             \
-    defined(MPC_BOTH_MODELS)
         for (int i = 0; i < run_times; i++) {
           u_input =
               g2o_compute_input(mpc, optimizer, numberOfIterations,
@@ -227,7 +245,6 @@ int main(int argc, char **argv) {
                   } */
           }
         }
-#endif
 
         v_h_signal[k] = param->get_v_h_0();
         d_h_signal[k] = param->get_d_h_0();
@@ -270,10 +287,8 @@ int main(int argc, char **argv) {
       time_stream << std::put_time(&tm, "%y%m%d_%H%M");
       std::string time_string = time_stream.str();
 
-#if (!(defined(MPC_AMPL_LANGUAGE) || defined(MPC_CASADI_TOOL)))
       time_string += std::string("_G2O") + "_" + AlIneqType + "_" + AlgEqType +
                      "_" + solverType + "_" + std::to_string(linearSolverType);
-#endif
 
       std::string file_name =
           time_string + "_" + std::to_string(mpcHorizon) + ".bin";
@@ -288,8 +303,6 @@ int main(int argc, char **argv) {
                   u_input_signal, num_iterations_signal, cal_time_signal,
                   cost_level_signal);
 
-#if (!(defined(MPC_AMPL_LANGUAGE) || defined(MPC_CASADI_TOOL))) ||             \
-    defined(MPC_BOTH_MODELS)
       std::string terminationCriterionStr;
       if (terminationCriterion == 0) {
         terminationCriterionStr = "UpdateNorm";
@@ -302,7 +315,6 @@ int main(int argc, char **argv) {
                          AlgEqType, AlIneqType, terminationCriterionStr,
                          linearSolverType, mpcHorizon, ampl_solver);
       saveConfigSettings(data_saver, param, optimizer);
-#endif
 
       data_saver.close();
       // run the python script to plot the results
@@ -320,7 +332,6 @@ int main(int argc, char **argv) {
       system(command.c_str());
       // plt::show();
     }
-    // call the next solver in the list if ampl_solver == 99
   }
   }
 

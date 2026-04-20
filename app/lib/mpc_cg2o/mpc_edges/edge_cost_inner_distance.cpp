@@ -14,7 +14,7 @@ void EdgeCost_inner_distance::computeError() {
   _error[0] = slack_1_kp1;
 }
 
-#ifdef USE_EXACT_JACOBIANS
+#ifndef MPC_USE_NUMERICAL_JACOBIAN
 void EdgeCost_inner_distance::linearizeOplus() {
   // The derivative of _error[0] (slack_1_kp1) with respect to the vertex[0]
   // (slack_1_kp1)  is 1 Set the Jacobian's value for the scalar relationship

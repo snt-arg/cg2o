@@ -27,7 +27,7 @@ void EdgeIneq_f_t_min::computeIneq() {
   }
 }
 
-#ifdef USE_EXACT_JACOBIANS
+#ifndef MPC_USE_NUMERICAL_JACOBIAN
 void EdgeIneq_f_t_min::linearizeOplus() {
   // The derivative of _ineq[0]  with respect to the vertex[0] (f_t_k):
   // Set the Jacobian's value for the scalar relationship

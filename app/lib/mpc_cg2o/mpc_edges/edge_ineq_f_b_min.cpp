@@ -24,7 +24,7 @@ void EdgeIneq_f_b_min::computeIneq() {
     _ineq[0] *= _scaling_factor;
   }
 }
-#ifdef USE_EXACT_JACOBIANS
+#ifndef MPC_USE_NUMERICAL_JACOBIAN
 void EdgeIneq_f_b_min::linearizeOplus() {
   const Vertex_f_b *v_f_b_k = static_cast<const Vertex_f_b *>(_vertices[0]);
   double f_b_k = v_f_b_k->estimate();

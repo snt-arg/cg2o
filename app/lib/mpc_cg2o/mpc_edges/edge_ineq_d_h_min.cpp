@@ -23,7 +23,7 @@ void EdgeIneq_d_h_min::computeIneq() {
     _ineq[0] = pow(h_min * v_h_kp1 + d_min, 3) - pow(d_h_kp1, 3);
   }
 }
-#ifdef USE_EXACT_JACOBIANS
+#ifndef MPC_USE_NUMERICAL_JACOBIAN
 void EdgeIneq_d_h_min::linearizeOplus() {
   // The derivative of _ineq[0]  with respect to the vertex[0] (d_h_kp1)  is -1
   // The derivative of _ineq[0]  with respect to the vertex[1] (v_h_kp1)  is

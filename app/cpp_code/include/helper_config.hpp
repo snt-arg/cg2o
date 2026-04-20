@@ -92,7 +92,14 @@ void configureMPCParameters(const YAML::Node &config, auto &param,
   param->set_linearDynamics(linearDynamics);
   param->set_linearInequalities(linearInequalities);
   param->set_scaleInequalities(scaleInequalities);
-// Initialize optimizer
+  // Initialize optimizer
+
+  optimizer->setVerbose(getIntValue(config["general_settings"], "verbose"));
+  optimizer->setNumInnerIterationsMax(
+      getIntValue(config["general_settings"], "num_inner_iterations_max"));
+  double alpha_backtracking =
+      getDoubleValue(config["general_settings"], "alpha_backtracking");
+  optimizer->setAlphaBacktracking(alpha_backtracking);
 #ifdef USE_AL
   optimizer->setAlgorithmEq(AlgEqType);
   optimizer->_lagrange_multiplier_initial_ineq = getDoubleValue(
@@ -108,15 +115,13 @@ void configureMPCParameters(const YAML::Node &config, auto &param,
 
 #endif
 #ifdef USE_BIPM
-  optimizer->setAlgorithmEq(AlgEqType);
+  optimizer->setKappaInitial(
+      getDoubleValue(config["bipm_settings"], "kappa_initial"));
+  optimizer->setKappaFinal(
+      getDoubleValue(config["bipm_settings"], "kappa_final"));
+  optimizer->setKappaUpdateFactor(
+      getDoubleValue(config["bipm_settings"], "kappa_update_factor"));
 
-  auto optimizer = std::make_shared<g2o::SparseOptimizerBIPM>();
-  auto mpc =
-      std::make_shared<g2o::mpc::MPCFormulation<g2o::SparseOptimizerBIPM>>(
-          mpcHorizon, optimizer, param);
-  optimizer->_kappa0 = getDoubleValue(config["bipm_settings"], "kappa0");
-  optimizer->_t_final = getDoubleValue(config["bipm_settings"], "t_final");
-  optimizer->_nu = getDoubleValue(config["bipm_settings"], "nu");
 #endif
 #ifdef USE_ISPD
   optimizer->setStepSizeStrategy(
@@ -128,13 +133,17 @@ void configureMPCParameters(const YAML::Node &config, auto &param,
 
   optimizer->setInitKappaStrategy(
       getIntValue(config["ispd_settings"], "_init_kappa_strategy"));
-  optimizer->setKappaInitial(getDoubleValue(config["ispd_settings"], "kappa_initial"));
+  optimizer->setKappaInitial(
+      getDoubleValue(config["ispd_settings"], "kappa_initial"));
 
   optimizer->setUpdateKappaStrategy(
       getDoubleValue(config["ispd_settings"], "update_kappa_strategy"));
-  optimizer->setKappaUpdateFactor(getDoubleValue(config["ispd_settings"], "nu"));
-  optimizer->setKappaFinal(getDoubleValue(config["ispd_settings"], "kappa_final"));
-  optimizer->setTau(getDoubleValue(config["ispd_settings"], "tau"));
+  optimizer->setKappaUpdateFactor(
+      getDoubleValue(config["ispd_settings"], "kappa_update_factor"));
+  optimizer->setKappaFinal(
+      getDoubleValue(config["ispd_settings"], "kappa_final"));
+  optimizer->setTau(
+      getDoubleValue(config["ispd_settings"], "tau"));
   optimizer->setLimitKappaFinal(
       getIntValue(config["ispd_settings"], "limit_kappa_final"));
 
@@ -146,7 +155,7 @@ void configureMPCParameters(const YAML::Node &config, auto &param,
   optimizer->setInitLagrangeStrategy(
       getIntValue(config["ispd_settings"], "init_lagrange_strategy"));
   optimizer->setLagrangeMultiplierInitialIneq(
-      getDoubleValue(config["ispd_settings"], "lagrange_multiplier_initial_ineq"))  ;
+      getDoubleValue(config["ispd_settings"], "lagrange_multiplier_initial_ineq"));
 
   optimizer->setIneqPredictionParam(
       getDoubleValue(config["ispd_settings"], "ineq_prediction_param"));
@@ -159,15 +168,14 @@ void configureMPCParameters(const YAML::Node &config, auto &param,
       getIntValue(config["ispd_settings"], "keep_aux_positive_strategy"));
   optimizer->setAuxScalingFactor(
       getDoubleValue(config["ispd_settings"], "aux_scaling_factor"));
-  optimizer->_aux_correction_value =
+  optimizer->setAuxCorrectionValue(
       getDoubleValue(config["ispd_settings"], "aux_correction_value");
 
- 
 #endif
-  optimizer->setVerbose(getIntValue(config["general_settings"], "verbose"));  
 }
 
 void saveConfigSettings(auto &data_saver, auto &param, const auto &optimizer) {
+  data_saver.write("alpha", optimizer->alpha());
   data_saver.write("IsSpaceDomain", param->isSpaceDomain());
   data_saver.write("useLinearDynamics", param->isLinearDynamics());
   data_saver.write("useLinearInequalities", param->isLinearInequalities());
@@ -182,23 +190,23 @@ void saveConfigSettings(auto &data_saver, auto &param, const auto &optimizer) {
   data_saver.write("rho_upate_factor_ineq", optimizer->_rho_update_factor_ineq);
 #endif
 #ifdef USE_BIPM
-  data_saver.write("t_final", optimizer->_t_final);
-  data_saver.write("t_init", optimizer->_kappa0);
-  data_saver.write("nu_update", optimizer->_nu);
+  data_saver.write("kappa_final", optimizer->_kappa_final);
+  data_saver.write("t_init", optimizer->_kappa_initial);
+  data_saver.write("nu_update", optimizer->_kappa_update_factor);
 #endif
 #ifdef USE_ISPD
-  data_saver.write("kappa_init", optimizer->kappaInitial());
-  data_saver.write("nu_update", optimizer->updateKappaStrategy());
+  data_saver.write("t_init", optimizer->_kappa_initial);
+  data_saver.write("nu_update", optimizer->_kappa_update_factor);
   data_saver.write("step_size_strategy", optimizer->_step_size_strategy);
   data_saver.write("ineq_backtracking_step_min",
                    optimizer->_ineq_backtracking_step_min);
   data_saver.write("aux_backtracking_step_min",
                    optimizer->_aux_backtracking_step_min);
   data_saver.write("_init_kappa_strategy", optimizer->_init_kappa_strategy);
+  data_saver.write("kappa_initial", optimizer->_kappa_initial);
   data_saver.write("update_kappa_strategy", optimizer->_update_kappa_strategy);
-  data_saver.write("nu", optimizer->kappaUpdateFactor());
-  data_saver.write("kappa_final", optimizer->kappaFinal());
-   data_saver.write("tau", optimizer->_tau);
+  data_saver.write("nu", optimizer->_kappa_update_factor);
+  data_saver.write("kappa_final", optimizer->_kappa_final);
   data_saver.write("tau", optimizer->_tau);
   data_saver.write("limit_kappa_final", optimizer->_limit_kappa_final);
   data_saver.write("init_slack_strategy", optimizer->_init_slack_strategy);
@@ -217,7 +225,7 @@ void saveConfigSettings(auto &data_saver, auto &param, const auto &optimizer) {
                    optimizer->_keep_aux_positive_strategy);
   data_saver.write("aux_scaling_factor", optimizer->_aux_scaling_factor);
   data_saver.write("aux_correction_value", optimizer->_aux_correction_value);
- 
+
 #endif
 }
 
