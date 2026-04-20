@@ -8,7 +8,6 @@
 #include <Eigen/Core>
 #include <cmath>
 #include <iostream>
-#include <memory>
 #include <vector>
 
 namespace cg2o {
@@ -19,6 +18,12 @@ SparseOptimizerISPD::SparseOptimizerISPD() = default;
 
 // Default destructor
 SparseOptimizerISPD::~SparseOptimizerISPD() = default;
+
+void SparseOptimizerISPD::resetLagrangeMultiplierEq() {
+  for (auto &vertex : _vEqLagrangeMultipliers) {
+    vertex->setToOrigin();
+  }
+}
 
 // Setter solver paramters
 void SparseOptimizerISPD::setStepSizeStrategy(int strategy) {
@@ -97,6 +102,7 @@ void SparseOptimizerISPD::setAuxCorrectionValue(double value) {
   _aux_correction_value = value;
 }
 
+// Getter solver parameters
 int SparseOptimizerISPD::stepSizeStrategy() const {
   return _step_size_strategy;
 }
@@ -169,12 +175,7 @@ double SparseOptimizerISPD::auxCorrectionValue() const {
   return _aux_correction_value;
 }
 
- 
-void SparseOptimizerISPD::resetLagrangeMultiplierEq() {
-  for (auto &vertex : _vEqLagrangeMultipliers) {
-    vertex->setToOrigin();
-  }
-}
+// solver functions
 
 void SparseOptimizerISPD::executeEdgeProcessing(void *edgePtr, int controller) {
   auto it = edgeProcessingFunctionMap.find(edgePtr);
@@ -218,8 +219,8 @@ void SparseOptimizerISPD::computeKappa(bool input) {
   switch (_update_kappa_strategy) {
   case 0:
 
-    t_candidate = std::max(t_candidate,
-                           (_tau + std::exp(-_kappa / (.2 * _kappa_final))) * _kappa);
+    t_candidate = std::max(
+        t_candidate, (_tau + std::exp(-_kappa / (.2 * _kappa_final))) * _kappa);
     break;
   case 1:
     t_candidate = std::max(t_candidate, _kappa_initial);
@@ -392,8 +393,7 @@ int SparseOptimizerISPD::optimize(int iterations, bool online) {
   if (_activeEdgesIneq.empty()) {
     _kappa = _kappa_final;
   } else {
-    _kappa = _kappa_initial; // compute the initial value of _kappa or you can to
-                         // compute t using
+    _kappa = _kappa_initial;
   }
 
   for (auto &edge : _activeEdgesIneq) {

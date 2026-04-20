@@ -226,11 +226,6 @@ public:
   SparseOptimizerISPD();  // Default constructor
   ~SparseOptimizerISPD(); // Virtual destructor
 
-  // Function to construct the quadratic form implementation
-  template <int D, typename E, typename... VertexTypes>
-  void constructQuadraticFormIneq(
-      BaseFixedSizedEdgeIneq<D, E, VertexTypes...> &edge);
-
   // Function to construct the quadratic form implementation for Augmented
   // Lagrangian Eqaulity Algorithm
   template <int D, typename E, typename... VertexTypes>
@@ -238,17 +233,24 @@ public:
   constructQuadraticFormEq(BaseFixedSizedEdgeEq<D, E, VertexTypes...> &edge);
 
   template <int D, typename E, typename... VertexTypes>
-  bool addEdgeIneqImpl(BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *e);
+  bool addEdgeEqImpl(BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e);
   /**
-   * add the inequlaity edge to the optimizer and the set of inequality edges
+   * add the inequlaity edge to the optimizer and the set of equality edges
    * @param e: the edge to be added
    * @returns false if somethings goes wrong
    */
 
+  void resetLagrangeMultiplierEq() override;
+
+  // Function to construct the quadratic form implementation
   template <int D, typename E, typename... VertexTypes>
-  bool addEdgeEqImpl(BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e);
+  void constructQuadraticFormIneq(
+      BaseFixedSizedEdgeIneq<D, E, VertexTypes...> &edge);
+
+  template <int D, typename E, typename... VertexTypes>
+  bool addEdgeIneqImpl(BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *e);
   /**
-   * add the inequlaity edge to the optimizer and the set of equality edges
+   * add the inequlaity edge to the optimizer and the set of inequality edges
    * @param e: the edge to be added
    * @returns false if somethings goes wrong
    */
@@ -263,7 +265,6 @@ public:
   void
   initializeSlackVariable(BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *edge);
 
-  void resetLagrangeMultiplierEq() override;
   void executeEdgeProcessing(void *edgePtr, int controller);
   virtual void update(const double *update) override;
   virtual int optimize(int iterations, bool online = false) override;

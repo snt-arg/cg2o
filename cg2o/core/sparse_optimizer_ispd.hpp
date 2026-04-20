@@ -66,29 +66,7 @@ void SparseOptimizerISPD::constructQuadraticFormIneq(
                                 std::make_index_sequence<_nr_of_vertices>());
 }
 
-template <int D, typename E, typename... VertexTypes>
-void SparseOptimizerISPD::constructQuadraticFormEq(
-    BaseFixedSizedEdgeEq<D, E, VertexTypes...> &edge) {
 
-  auto error = edge.error();
-  auto gamma = edge.lagrangeMultiplier();
-  auto rho = edge.rho();
-  Eigen::Matrix<double, 2 * D, 1> weightedError =
-      Eigen::Matrix<double, 2 * D, 1>::Zero();
-  Eigen::DiagonalMatrix<double, 2 * D> omega_matrix =
-      Eigen::DiagonalMatrix<double, 2 * D>(
-          Eigen::Matrix<double, 2 * D, 1>::Zero());
-  for (int i = 0; i < D; ++i) {
-    omega_matrix.diagonal()[i] = rho[i];
-    weightedError[i] =
-        -(omega_matrix.diagonal()[i] * error[i] + 0.5 * gamma[i]);
-  }
-
-  static const std::size_t _nr_of_vertices =
-      sizeof...(VertexTypes) + 1; // add the lagrange multiplier vertex
-  edge.constructQuadraticFormNs(omega_matrix, weightedError,
-                                std::make_index_sequence<_nr_of_vertices>());
-}
 template <int D, typename E, typename... VertexTypes>
 bool SparseOptimizerISPD::addEdgeIneqImpl(
     BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *e) {
@@ -122,37 +100,6 @@ bool SparseOptimizerISPD::addEdgeIneqImpl(
 
   // add teh edge to the set of inequality set
   _edgeIneqSet.insert(e);
-
-  return true;
-}
-
-template <int D, typename E, typename... VertexTypes>
-bool SparseOptimizerISPD::addEdgeEqImpl(
-    BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e) {
-  // create new vertex for the lagrangian
-  auto vLagrangian = std::make_shared<VertexLagrangeMultiplier<D>>();
-  // auto* nu = new VertexLagrangeMultiplier<D>();
-  vLagrangian->setId(e->getVertexLagrangeMultiplierId());
-  vLagrangian->setInitialValue(_lagrange_multiplier_initial_eq);
-
-  // Add the Nu vertex to the optimizer
-  this->addVertex(vLagrangian.get());
-
-  // assign the vertex to the edge
-  e->setVertex(e->vertices().size() - 1, vLagrangian.get());
-
-  bool eresult = OptimizableGraph::addEdge(e);
-  if (!eresult) {
-    std::cerr << "[Error] adding Eq edge to the optimizer" << std::endl;
-    return false;
-  }
-
-  vLagrangian->setFixed(false);
-  e->initializeInformationMatrix();
-
-  // add teh edge to the set of inequality set
-  _edgeEqSet.insert(e);
-  _vEqLagrangeMultipliers.push_back(vLagrangian);
 
   return true;
 }
@@ -448,6 +395,62 @@ void SparseOptimizerISPD::initializeSlackVariable(
 
   e->setSlackVariable(slack_variable);
 };
+
+
+template <int D, typename E, typename... VertexTypes>
+void SparseOptimizerISPD::constructQuadraticFormEq(
+    BaseFixedSizedEdgeEq<D, E, VertexTypes...> &edge) {
+
+  auto error = edge.error();
+  auto gamma = edge.lagrangeMultiplier();
+  auto rho = edge.rho();
+  Eigen::Matrix<double, 2 * D, 1> weightedError =
+      Eigen::Matrix<double, 2 * D, 1>::Zero();
+  Eigen::DiagonalMatrix<double, 2 * D> omega_matrix =
+      Eigen::DiagonalMatrix<double, 2 * D>(
+          Eigen::Matrix<double, 2 * D, 1>::Zero());
+  for (int i = 0; i < D; ++i) {
+    omega_matrix.diagonal()[i] = rho[i];
+    weightedError[i] =
+        -(omega_matrix.diagonal()[i] * error[i] + 0.5 * gamma[i]);
+  }
+
+  static const std::size_t _nr_of_vertices =
+      sizeof...(VertexTypes) + 1; // add the lagrange multiplier vertex
+  edge.constructQuadraticFormNs(omega_matrix, weightedError,
+                                std::make_index_sequence<_nr_of_vertices>());
+}
+
+template <int D, typename E, typename... VertexTypes>
+bool SparseOptimizerISPD::addEdgeEqImpl(
+    BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e) {
+  // create new vertex for the lagrangian
+  auto vLagrangian = std::make_shared<VertexLagrangeMultiplier<D>>();
+  // auto* nu = new VertexLagrangeMultiplier<D>();
+  vLagrangian->setId(e->getVertexLagrangeMultiplierId());
+  vLagrangian->setInitialValue(_lagrange_multiplier_initial_eq);
+
+  // Add the Nu vertex to the optimizer
+  this->addVertex(vLagrangian.get());
+
+  // assign the vertex to the edge
+  e->setVertex(e->vertices().size() - 1, vLagrangian.get());
+
+  bool eresult = OptimizableGraph::addEdge(e);
+  if (!eresult) {
+    std::cerr << "[Error] adding Eq edge to the optimizer" << std::endl;
+    return false;
+  }
+
+  vLagrangian->setFixed(false);
+  e->initializeInformationMatrix();
+
+  // add teh edge to the set of inequality set
+  _edgeEqSet.insert(e);
+  _vEqLagrangeMultipliers.push_back(vLagrangian);
+
+  return true;
+}
 
 
 } // namespace cg2o
