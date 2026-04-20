@@ -69,10 +69,10 @@ void SparseOptimizerBIPM::setKappaFinal(double kappaFinal) {
 }
 
 // getter for the solver parameters
-double SparseOptimizerBIPM::Kappa() const { return _kappa; }
-double SparseOptimizerBIPM::KappaInitial() const { return _kappa_initial; }
-double SparseOptimizerBIPM::KappaFinal() const { return _kappa_final; }
-double SparseOptimizerBIPM::KappaUpdateFactor() const {
+double SparseOptimizerBIPM::kappa() const { return _kappa; }
+double SparseOptimizerBIPM::kappaInitial() const { return _kappa_initial; }
+double SparseOptimizerBIPM::kappaFinal() const { return _kappa_final; }
+double SparseOptimizerBIPM::kappaUpdateFactor() const {
   return _kappa_update_factor;
 }
 

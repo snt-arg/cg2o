@@ -166,10 +166,10 @@ public:
   void setKappaUpdateFactor(double kappaUpdateFactor);
 
   // getter for the solver parameters
-  double Kappa() const;
-  double KappaInitial() const;
-  double KappaFinal() const;
-  double KappaUpdateFactor() const;
+  double kappa() const;
+  double kappaInitial() const;
+  double kappaFinal() const;
+  double kappaUpdateFactor() const;
 
 
 protected:

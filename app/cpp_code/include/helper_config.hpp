@@ -121,10 +121,9 @@ void configureMPCParameters(const YAML::Node &config, auto &param,
       getDoubleValue(config["bipm_settings"], "kappa_final"));
   optimizer->setKappaUpdateFactor(
       getDoubleValue(config["bipm_settings"], "kappa_update_factor"));
-
 #endif
 #ifdef USE_ISPD
-  optimizer->setStepSizeStrategy(
+   optimizer->setStepSizeStrategy(
       getIntValue(config["ispd_settings"], "step_size_strategy"));
   optimizer->setIneqBacktrackingStepMin(
       getDoubleValue(config["ispd_settings"], "ineq_backtracking_step_min"));
@@ -190,42 +189,39 @@ void saveConfigSettings(auto &data_saver, auto &param, const auto &optimizer) {
   data_saver.write("rho_upate_factor_ineq", optimizer->_rho_update_factor_ineq);
 #endif
 #ifdef USE_BIPM
-  data_saver.write("kappa_final", optimizer->_kappa_final);
-  data_saver.write("t_init", optimizer->_kappa_initial);
-  data_saver.write("nu_update", optimizer->_kappa_update_factor);
+  data_saver.write("kappa_final", optimizer->kappaFinal());
+  data_saver.write("t_init", optimizer->kappaInitial());
+  data_saver.write("nu_update", optimizer->kappaUpdateFactor());
 #endif
 #ifdef USE_ISPD
-  data_saver.write("t_init", optimizer->_kappa_initial);
-  data_saver.write("nu_update", optimizer->_kappa_update_factor);
-  data_saver.write("step_size_strategy", optimizer->_step_size_strategy);
+  data_saver.write("t_init", optimizer->kappaInitial());
+  data_saver.write("nu_update", optimizer->kappaUpdateFactor());
+  data_saver.write("step_size_strategy", optimizer->stepSizeStrategy());
   data_saver.write("ineq_backtracking_step_min",
-                   optimizer->_ineq_backtracking_step_min);
+                   optimizer->ineqBacktrackingStepMin());
   data_saver.write("aux_backtracking_step_min",
-                   optimizer->_aux_backtracking_step_min);
-  data_saver.write("_init_kappa_strategy", optimizer->_init_kappa_strategy);
-  data_saver.write("kappa_initial", optimizer->_kappa_initial);
-  data_saver.write("update_kappa_strategy", optimizer->_update_kappa_strategy);
-  data_saver.write("nu", optimizer->_kappa_update_factor);
-  data_saver.write("kappa_final", optimizer->_kappa_final);
-  data_saver.write("tau", optimizer->_tau);
-  data_saver.write("limit_kappa_final", optimizer->_limit_kappa_final);
-  data_saver.write("init_slack_strategy", optimizer->_init_slack_strategy);
+                   optimizer->auxBacktrackingStepMin());
+  data_saver.write("_init_kappa_strategy", optimizer->initKappaStrategy());
+  data_saver.write("kappa_initial", optimizer->kappaInitial());
+  data_saver.write("update_kappa_strategy", optimizer->updateKappaStrategy());
+  data_saver.write("nu", optimizer->kappaUpdateFactor());
+  data_saver.write("kappa_final", optimizer->kappaFinal());
+  data_saver.write("tau", optimizer->tau());
+  data_saver.write("limit_kappa_final", optimizer->limitKappaFinal());
+  data_saver.write("init_slack_strategy", optimizer->initSlackStrategy());
   data_saver.write("slack_variable_initial_ineq",
-                   optimizer->_slack_variable_initial_ineq);
-  data_saver.write("init_lagrange_strategy",
-                   optimizer->_init_lagrange_strategy);
+                   optimizer->slackVariableInitialIneq());
   data_saver.write("lagrange_multiplier_initial_ineq",
-                   optimizer->_lagrange_multiplier_initial_ineq);
+                   optimizer->lagrangeMultiplierInitialIneq());
   data_saver.write("ineq_prediction_strategy",
-                   optimizer->_ineq_prediction_strategy);
+                   optimizer->ineqPredictionStrategy());
   data_saver.write("ineq_prediction_step_strategy",
-                   optimizer->_ineq_prediction_step_strategy);
-  data_saver.write("ineq_prediction_param", optimizer->_ineq_prediction_param);
+                   optimizer->ineqPredictionStepStrategy());
+  data_saver.write("ineq_prediction_param", optimizer->ineqPredictionParam());
   data_saver.write("keep_aux_positive_strategy",
-                   optimizer->_keep_aux_positive_strategy);
-  data_saver.write("aux_scaling_factor", optimizer->_aux_scaling_factor);
-  data_saver.write("aux_correction_value", optimizer->_aux_correction_value);
-
+                   optimizer->keepAuxPositiveStrategy());
+  data_saver.write("aux_scaling_factor", optimizer->auxScalingFactor());
+  data_saver.write("aux_correction_value", optimizer->auxCorrectionValue());
 #endif
 }
 
