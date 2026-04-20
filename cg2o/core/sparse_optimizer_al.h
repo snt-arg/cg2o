@@ -171,7 +171,6 @@ public:
   double RhoUpdateFactor() const;
 
   // Setter function
-  void setAlphaBacktracking(std::vector<double> alphaBacktracking);
   void resetLagrangeMultiplierEq() override;
 
 protected:
@@ -185,7 +184,7 @@ protected:
 
   bool _useSlackVariables = true; // Using slack variables for the inequality
                                   // constraints. it does not appear directly
-  bool _reset_lagrange_multipliers = false; 
+  bool _reset_lagrange_multipliers = false;
   // _rho_bar is saved in the variable called slack variable
 };
 

@@ -142,13 +142,15 @@ public:
   void setLagrangeMultiplierInitial(double lagrangeMultiplierInitial);
   void setEpsilonConstraint(double epsilon);
   void setEpsilonConvergence(double epsilon);
+  void setAlphaBacktrackingVector(std::vector<double> alphaBacktracking);
+  void setAlphaBacktracking(double alpha);
+  void setNumInnerIterationsMax(int numInnerIterationsMax);
 
   bool getWarmStartLagrangeMultiplierFlag();
   int getInnerIterationsMax();
   double getLagrangeMultiplierInitial();
-  void setAlphaBacktrackingValue(double alpha);
-
-  // virtual void defineAlphaBacktracking() {      }
+  double alpha();
+  double NumInnerIterationsMax();
 
 protected:
   std::vector<std::shared_ptr<g2o::OptimizableGraph::Vertex>>
@@ -160,16 +162,18 @@ protected:
   std::set<OptimizableGraph::Edge *> _edgeIneqSet; // Set of inequality edges
   EdgeContainer _activeEdgesEq; ///< sorted according to EdgeIDCompare
   std::set<OptimizableGraph::Edge *> _edgeEqSet; // Set of equality edges
+
+  // solver parameter
+  std::vector<double> _alphaBacktracking;
+  double _alpha = 0.9;
+
   double _lagrange_multiplier_initial_eq; // Initial value for the Lagrangian
                                           // vertex
   int _num_inner_iterations_max; // Maximum number of inner iterations for the
-                                 // AL algorithm
+                                 // AL and BIPM algorithm
   bool _warm_start_lagrange_multiplier_eq_flag =
       false; // Flag to indicate if the Lagrangian multiplier should be warmed
              // up
-             // solver parameter
-  std::vector<double> _alphaBacktracking;
-  double _alpha = 0.9;
 
   void defineAlphaBacktracking(double alpha);
 };

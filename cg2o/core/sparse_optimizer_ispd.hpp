@@ -50,7 +50,7 @@ void SparseOptimizerISPD::constructQuadraticFormIneq(
   auto error = edge.error();
   auto &lambda = edge.lagrangeMultiplier();
   auto &slack = edge.slackVariable();
-  double mu = 1.0 / _t;
+  double mu = 1.0 / _kappa;
   Eigen::Matrix<double, D, 1> weightedError;
   Eigen::Matrix<double, D, 1> omega;
 
@@ -197,7 +197,7 @@ void SparseOptimizerISPD::edgeProcessing(EdgeType *edge, int controller) {
       break;
     }
     case 1: {
-      multiplier = (1.0 / (_t * slack.array()))
+      multiplier = (1.0 / (_kappa * slack.array()))
                        .cwiseMax(Eigen::Matrix<double, D, 1>::Constant(
                                      _lagrange_multiplier_initial_ineq)
                                      .array())
@@ -307,7 +307,7 @@ void SparseOptimizerISPD::edgeProcessing(EdgeType *edge, int controller) {
     slack_update = -slack.array() - predicted_error.array();
 
     multipliers_update =
-        1.0 / (_t * slack.array()) +
+        1.0 / (_kappa * slack.array()) +
         multipliers.array() / slack.array() * predicted_error.array();
 
     applyBacktracking(multipliers, multipliers_update);

@@ -40,7 +40,7 @@ set(EXEC_NAME "${EXC}_exc")
 
 # Default optimizer, overridable from outside
 # using a cmake argument -DMPC_CG2O_OPTIMIZER=AL|ISPD|BIPM:
- set(MPC_CG2O_OPTIMIZER "BIPM" CACHE STRING "Optimizer backend for mpc executable")
+ set(MPC_CG2O_OPTIMIZER "ISPD" CACHE STRING "Optimizer backend for mpc executable")
 set_property(CACHE MPC_CG2O_OPTIMIZER PROPERTY STRINGS AL ISPD BIPM)
 
 function(set_mpc_optimizer target optimizer_var)

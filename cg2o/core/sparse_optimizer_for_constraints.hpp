@@ -381,6 +381,25 @@ void SparseOptimizerForConstraints<Derived>::setEpsilonConvergence(
 }
 
 template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::setAlphaBacktrackingVector(
+    std::vector<double> alphaBacktracking) {
+  _alphaBacktracking = alphaBacktracking;
+}
+
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::setAlphaBacktracking(
+    double alpha) {
+  _alpha = alpha;
+  defineAlphaBacktracking(_alpha);
+}
+
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::setNumInnerIterationsMax(
+    int numInnerIterationsMax) {
+  _num_inner_iterations_max = numInnerIterationsMax;
+}
+
+template <typename Derived>
 bool SparseOptimizerForConstraints<
     Derived>::getWarmStartLagrangeMultiplierFlag() {
   return _warm_start_lagrange_multiplier_eq_flag;
@@ -397,10 +416,17 @@ double SparseOptimizerForConstraints<Derived>::getLagrangeMultiplierInitial() {
 }
 
 template <typename Derived>
-void SparseOptimizerForConstraints<Derived>::setAlphaBacktrackingValue(
-    double alpha) {
-  _alpha = alpha;
+double SparseOptimizerForConstraints<Derived>::alpha() {
+  return _alpha;
 }
+
+template <typename Derived>
+double SparseOptimizerForConstraints<Derived>::NumInnerIterationsMax() {
+  return _num_inner_iterations_max;
+}
+
+
+
 
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::defineAlphaBacktracking(

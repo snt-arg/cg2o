@@ -50,6 +50,12 @@ SparseOptimizerBIPM::SparseOptimizerBIPM() {
 // Default destructor
 SparseOptimizerBIPM::~SparseOptimizerBIPM() = default;
 
+void SparseOptimizerBIPM::resetLagrangeMultiplierEq() {
+  for (auto &vertex : _vEqLagrangeMultipliers) {
+    vertex->setToOrigin();
+  }
+}
+
 // Setter solver paramters
 void SparseOptimizerBIPM::setKappa(double kappa) { _kappa = kappa; }
 void SparseOptimizerBIPM::setKappaInitial(double kappaInitial) {
@@ -70,17 +76,8 @@ double SparseOptimizerBIPM::KappaUpdateFactor() const {
   return _kappa_update_factor;
 }
 
-void SparseOptimizerBIPM::resetLagrangeMultiplierEq() {
-  for (auto &vertex : _vEqLagrangeMultipliers) {
-    vertex->setToOrigin();
-  }
-}
 
-void SparseOptimizerBIPM::setAlphaBacktracking(
-    std::vector<double> alphaBacktracking) {
-  _alphaBacktracking = alphaBacktracking;
-}
-
+ 
 double SparseOptimizerBIPM::backtrackingAlgorithm(const double *update) {
   // Initialize variables
   size_t c = 0;

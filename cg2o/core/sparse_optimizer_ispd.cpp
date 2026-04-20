@@ -169,11 +169,7 @@ double SparseOptimizerISPD::auxCorrectionValue() const {
   return _aux_correction_value;
 }
 
-void SparseOptimizerISPD::setAlphaBacktracking(
-    std::vector<double> alphaBacktracking) {
-  _alphaBacktracking = alphaBacktracking;
-}
-
+ 
 void SparseOptimizerISPD::resetLagrangeMultiplierEq() {
   for (auto &vertex : _vEqLagrangeMultipliers) {
     vertex->setToOrigin();
@@ -192,13 +188,13 @@ void SparseOptimizerISPD::executeEdgeProcessing(void *edgePtr, int controller) {
 
 void SparseOptimizerISPD::computeKappa(bool input) {
   // limit t to t_final
-  if (_limit_kappa_final && (_t >= _kappa_final)) {
+  if (_limit_kappa_final && (_kappa >= _kappa_final)) {
     return;
   }
 
   if (_init_kappa_strategy == 3) {
     if (input) {
-      _t = _kappa_update_factor * _t;
+      _kappa = _kappa_update_factor * _kappa;
     }
     return;
   }
@@ -223,7 +219,7 @@ void SparseOptimizerISPD::computeKappa(bool input) {
   case 0:
 
     t_candidate = std::max(t_candidate,
-                           (_tau + std::exp(-_t / (.2 * _kappa_final))) * _t);
+                           (_tau + std::exp(-_kappa / (.2 * _kappa_final))) * _kappa);
     break;
   case 1:
     t_candidate = std::max(t_candidate, _kappa_initial);
@@ -232,17 +228,17 @@ void SparseOptimizerISPD::computeKappa(bool input) {
     // keep t_candidate
     break;
   case 3:
-    t_candidate = _t;
+    t_candidate = _kappa;
     if (input) {
       t_candidate = std::max(t_candidate, _kappa_initial);
-      t_candidate = _t * _kappa_update_factor;
+      t_candidate = _kappa * _kappa_update_factor;
     }
     break;
   default:
     throw std::runtime_error("[Error] Unknown t update strategy.");
   }
 
-  _t = t_candidate;
+  _kappa = t_candidate;
 }
 
 double SparseOptimizerISPD::constraintsBacktracking(const double *update) {
@@ -394,9 +390,9 @@ int SparseOptimizerISPD::optimize(int iterations, bool online) {
   resetLagrangeMultiplierEq();
 
   if (_activeEdgesIneq.empty()) {
-    _t = _kappa_final;
+    _kappa = _kappa_final;
   } else {
-    _t = _kappa_initial; // compute the initial value of _t or you can to
+    _kappa = _kappa_initial; // compute the initial value of _kappa or you can to
                          // compute t using
   }
 
@@ -458,11 +454,11 @@ int SparseOptimizerISPD::optimize(int iterations, bool online) {
       _algorithm->printVerbose(cerr);
       cerr << endl;
     }
-    // std::cout << ", " << cjIterations << ": " << _t << " "
+    // std::cout << ", " << cjIterations << ": " << _kappa << " "
     //       << FIXED(activeRobustChi2());
     ++cjIterations;
     postIteration(cjIterations);
-    // std::cout << "*************** _t: " << _t << ", cjIterations: *"
+    // std::cout << "*************** _kappa: " << _kappa << ", cjIterations: *"
     //      << cjIterations << std::endl;
 
     stop = cjIterations >= iterations || terminate() || !ok;
@@ -491,7 +487,7 @@ int SparseOptimizerISPD::optimize(int iterations, bool online) {
 
     bool converged =
         verifyConvergence(-1) && verifyEqFeasibility(_activeEdgesEq, -1.0) &&
-        verifyIneqFeasibility(_activeEdgesIneq, -1.0) && _t >= _kappa_final;
+        verifyIneqFeasibility(_activeEdgesIneq, -1.0) && _kappa >= _kappa_final;
 
     stop = stop || converged;
 

@@ -154,6 +154,7 @@ public:
   @returns the the scaling factor for a successful step size
   */
 
+ void resetLagrangeMultiplierEq() override;
 
   // solver parameter
 
@@ -170,8 +171,6 @@ public:
   double KappaFinal() const;
   double KappaUpdateFactor() const;
 
-  void setAlphaBacktracking(std::vector<double> alphaBacktracking);
-  void resetLagrangeMultiplierEq() override;
 
 protected:
   std::unordered_map<void *, std::function<void()>>

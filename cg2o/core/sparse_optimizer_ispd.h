@@ -263,12 +263,12 @@ public:
   void
   initializeSlackVariable(BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *edge);
 
-
   void resetLagrangeMultiplierEq() override;
   void executeEdgeProcessing(void *edgePtr, int controller);
   virtual void update(const double *update) override;
   virtual int optimize(int iterations, bool online = false) override;
   void computeKappa(bool input = false);
+  double constraintsBacktracking(const double *update);
 
   // solver parameter
 
@@ -329,19 +329,14 @@ public:
   double auxScalingFactor() const;
   double auxCorrectionValue() const;
 
-  double getLagrangeMultiplierEq();
-
-  void setAlphaBacktracking(std::vector<double> alphaBacktracking);
-
-  double constraintsBacktracking(const double *update);
-
 protected:
   std::unordered_map<void *, std::function<void(int)>>
       edgeProcessingFunctionMap;
 
   std::unordered_map<void *, std::function<double()>> getDualityGapFunctionMap;
   // solver parameter
-  double _t; // Default value for the primal daul function parameter _t
+  double
+      _kappa; // Default value for the primal duality function parameter _kappa
 public:
   // clang-format off
 

@@ -93,10 +93,6 @@ void SparseOptimizerAL::executeEqMultiplierUpdate(void *edgePtr) {
   }
 }
 
-void SparseOptimizerAL::setAlphaBacktracking(
-    std::vector<double> alphaBacktracking) {
-  _alphaBacktracking = alphaBacktracking;
-}
 
 int SparseOptimizerAL::optimize(int iterations, bool online) {
   using namespace g2o;
