@@ -169,7 +169,7 @@ void configureMPCParameters(const YAML::Node &config, auto &param,
   optimizer->setAuxScalingFactor(
       getDoubleValue(config["ispd_settings"], "aux_scaling_factor"));
   optimizer->setAuxCorrectionValue(
-      getDoubleValue(config["ispd_settings"], "aux_correction_value");
+      getDoubleValue(config["ispd_settings"], "aux_correction_value"));
 
 #endif
 }
