@@ -7,7 +7,7 @@ The controller is exposed as a ROS 2 **action server**.
 
 ## 📦 Requirements
 
-- ROS 2 **Humble**
+- ROS 2 **Jazzy**
 - `colcon` build tool
 - Dependencies installed (Eigen, g2o, cg2o, yaml-cpp, etc.)
 
@@ -18,7 +18,7 @@ The controller is exposed as a ROS 2 **action server**.
 From your workspace (`ros_ws`):
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build
 source install/setup.bash
 ```
@@ -50,7 +50,7 @@ ros2 run acc_control_mpc_g2o acc_control_mpc_g2o_ros \
 Open a new terminal for the workspace (ros_ws):
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 ```
 
