@@ -13,7 +13,7 @@ void EdgeCost_traction_change::computeError() {
 
   _error[0] = slack_2_k;
 }
-#ifndef MPC_USE_NUMERICAL_JACOBIAN
+#if MPC_USE_NUMERICAL_JACOBIANS == 0
 void EdgeCost_traction_change::linearizeOplus() {
   // The derivative of _error[0] (slack_2_k) with respect to the vertex[0]
   // (slack_2_k)  is 1 Set the Jacobian's value for the scalar relationship

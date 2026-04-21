@@ -39,7 +39,7 @@ void EdgeIneq_f_t_max::computeIneq() {
 
 
 }
-#ifndef MPC_USE_NUMERICAL_JACOBIAN
+#if MPC_USE_NUMERICAL_JACOBIANS == 0
 void EdgeIneq_f_t_max::linearizeOplus() {
   // The derivative of _ineq[0]  with respect to the vertex[0] (f_t_k)
   // The derivative of _ineq[1]  with respect to the vertex[0] (f_t_k)

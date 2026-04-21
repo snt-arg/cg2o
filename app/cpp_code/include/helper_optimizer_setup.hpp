@@ -239,7 +239,7 @@ void oneTimeSimulationG2O(auto &param, auto &mpc, auto &optimizer,
 double g2o_compute_input(auto &mpc, auto &optimizer, int numberOfIterations,
                          double &compute_time_ms, double &num_iterations,
                          double &cost_level) {
-#ifdef MPC_FEASIBLE_INITIALIZATION
+#if MPC_FEASIBLE_INITIALIZATION==ON
   // Set a feasible initial guess for the optimization
   mpc->setInitialGuess(false);
 #else

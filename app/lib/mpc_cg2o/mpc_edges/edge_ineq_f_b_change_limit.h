@@ -15,7 +15,7 @@ public:
 
   EdgeIneq_f_b_change_limit(int k, std::shared_ptr<MPCParameters> param);
   void computeIneq() override;
-#ifndef MPC_USE_NUMERICAL_JACOBIAN
+#if MPC_USE_NUMERICAL_JACOBIANS == 0
   void linearizeOplus() override; // optional
 #endif
   bool write(std::ostream &os) const override;

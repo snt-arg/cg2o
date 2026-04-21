@@ -278,6 +278,7 @@ int main(int argc, char **argv) {
         }
       }
       // ################## save results and plot them ##################
+      namespace fs = std::filesystem;
       // Save results to a file or plot them
       // create the file name:
       // linearSolverType_AlgEqType_mpcHorizon_"PIPM".bin
@@ -294,7 +295,22 @@ int main(int argc, char **argv) {
           time_string + "_" + std::to_string(mpcHorizon) + ".bin";
       std::cout << "File name: " << file_name << std::endl;
 
-      DataSaver data_saver(file_name);
+      // 1. Construct the target directory path using the CMake macro
+      fs::path root = PROJECT_SOURCE_DIR;
+      fs::path lib_dir =
+          root / ".." / "lib"; // Assuming the library is in the "lib"
+                               // subdirectory of the project root
+      fs::path plotter_dir = root / "results";
+      fs::path target_dir = plotter_dir / "data";
+
+      // 2. Safety Check
+      if (!fs::exists(target_dir)) {
+        fs::create_directories(target_dir);
+      }
+
+      fs::path full_path = target_dir / file_name;
+
+      DataSaver data_saver(full_path.string());
 
       saveSignals(data_saver, f_t_signal, f_b_signal, delta_s_signal,
                   a_p_prediction_vector);
@@ -319,14 +335,14 @@ int main(int argc, char **argv) {
       data_saver.close();
       // run the python script to plot the results
       //  the python modular path
-      std::string python_modular_path =
-          current_path.parent_path().parent_path().string();
-      std::string lib_path = python_modular_path + "/../lib"; // Add this
 
-      std::string command = "export PYTHONPATH=\"" + lib_path + ":" +
-                            python_modular_path + ":$PYTHONPATH\"";
-      command =
-          command + "&& python3 -m results.results_harvesting " + file_name;
+      fs::path script_path = plotter_dir / "results_harvesting.py";
+
+      std::string command =
+          "export PYTHONPATH=\"" + lib_dir.string() + ":$PYTHONPATH\"";
+          
+      command = command + " && python3 " + script_path.string() + " --dir " +
+                target_dir.string() + " --data " + file_name;
 
       std::cout << command << std::endl;
       system(command.c_str());

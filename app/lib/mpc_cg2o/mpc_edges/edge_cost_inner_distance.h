@@ -14,7 +14,7 @@ public:
 
   EdgeCost_inner_distance(int k, std::shared_ptr<MPCParameters> param);
   void computeError() override;
-#ifndef MPC_USE_NUMERICAL_JACOBIAN
+#if MPC_USE_NUMERICAL_JACOBIANS == 0
   void linearizeOplus() override;
 #endif
 

@@ -29,7 +29,7 @@ void EdgeIneq_v_h_max::computeIneq() {
   }
 }
 
-#ifndef MPC_USE_NUMERICAL_JACOBIAN
+#if MPC_USE_NUMERICAL_JACOBIANS == 0
 void EdgeIneq_v_h_max::linearizeOplus() {
   // The derivative of _ineq[0]  with respect to the vertex[0] (v_h_kp1)  is 1
   // Set the Jacobian's value for the scalar relationship

@@ -14,7 +14,7 @@ public:
 
   EdgeCost_traction_change(int k, std::shared_ptr<MPCParameters> param);
   void computeError() override;
-#ifndef MPC_USE_NUMERICAL_JACOBIAN
+#if MPC_USE_NUMERICAL_JACOBIANS == 0
   void linearizeOplus() override; // optional
 #endif
 

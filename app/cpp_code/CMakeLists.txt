@@ -38,6 +38,8 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../lib
 set(EXC "mpc_g2o")
 set(EXEC_NAME "${EXC}_exc")
 
+
+
 # Default optimizer, overridable from outside
 # using a cmake argument -DMPC_CG2O_OPTIMIZER=AL|ISPD|BIPM:
  set(MPC_CG2O_OPTIMIZER "ISPD" CACHE STRING "Optimizer backend for mpc executable")
@@ -58,6 +60,11 @@ function(set_mpc_optimizer target optimizer_var)
 endfunction()
 
 add_executable(${EXEC_NAME} src/main.cpp)
+
+target_compile_definitions(${EXEC_NAME} PRIVATE 
+                            PROJECT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+
+target_compile_definitions(${EXEC_NAME} PRIVATE MPC_FEASIBLE_INITIALIZATION=0)
 
 target_link_libraries(${EXEC_NAME} PRIVATE
     g2o::core
@@ -80,8 +87,8 @@ target_include_directories(${EXEC_NAME} PRIVATE
 # Local optimizer selection for this executable only
 set_mpc_optimizer(${EXEC_NAME} MPC_CG2O_OPTIMIZER)
 
-if(MPC_USE_EXACT_JACOBIANS)
-    target_compile_definitions(${EXEC_NAME} PRIVATE MPC_USE_EXACT_JACOBIANS)
+if(MPC_USE_NUMERICAL_JACOBIANS)
+    target_compile_definitions(${EXEC_NAME} PRIVATE MPC_USE_NUMERICAL_JACOBIANS)
     message(STATUS "Using Exact Jacobian")
 endif()
 
@@ -115,7 +122,6 @@ endif()
 
  
 
-target_compile_definitions(${EXEC_NAME} PRIVATE MPC_FEASIBLE_INITIALIZATION)
 
 set_target_properties(${EXEC_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/results/data"
@@ -132,3 +138,17 @@ set(DEFAULT_CONFIG_PATH
 target_compile_definitions(${EXEC_NAME} PRIVATE
     DEFAULT_CONFIG_PATH="${DEFAULT_CONFIG_PATH}"
 )
+
+
+# --- Instructions for the user ---
+
+# Resolve the absolute path of the output directory
+get_filename_component(ABS_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/results/data" ABSOLUTE)
+
+message(STATUS "------------------------------------------------")
+message(STATUS "Build Configuration Complete!")
+message(STATUS "Selected Optimizer: ${MPC_CG2O_OPTIMIZER}")
+message(STATUS "Executable Path:    ${ABS_OUT_DIR}/${EXEC_NAME}")
+message(STATUS "To run the controller, use:")
+message(STATUS "  ${ABS_OUT_DIR}/${EXEC_NAME}")
+message(STATUS "------------------------------------------------")

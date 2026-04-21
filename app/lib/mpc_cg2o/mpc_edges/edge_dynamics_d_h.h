@@ -15,7 +15,7 @@ public:
 
   EdgeDynamics_d_h(int k, std::shared_ptr<MPCParameters> param);
   void computeEq() override;
-#ifndef MPC_USE_NUMERICAL_JACOBIAN
+#if MPC_USE_NUMERICAL_JACOBIANS == 0
   void linearizeOplus() override; // optional
 #endif
 

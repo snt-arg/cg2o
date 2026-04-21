@@ -27,7 +27,7 @@ void EdgeIneq_d_h_max::computeIneq() {
     _ineq[0] = pow(d_h_kp1, 3) - pow(h_soft * v_h_kp1 + slack_1_kp1, 3);
   }
 }
-#ifndef MPC_USE_NUMERICAL_JACOBIAN
+#if MPC_USE_NUMERICAL_JACOBIANS == 0
 void EdgeIneq_d_h_max::linearizeOplus() {
   auto &J_v0 = std::get<0>(this->_jacobianOplus); // d_h_kp1
   auto &J_v1 = std::get<1>(this->_jacobianOplus); // v_h_kp1

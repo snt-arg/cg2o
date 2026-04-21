@@ -36,7 +36,7 @@ void EdgeDynamics_d_h::computeEq() {
         d_h_kp1 - (d_h_k + delta_t / 2 * (v_p_k + v_p_kp1 - (v_h_k + v_h_kp1)));
   }
 }
-#ifndef MPC_USE_NUMERICAL_JACOBIAN
+#if MPC_USE_NUMERICAL_JACOBIANS == 0
 void EdgeDynamics_d_h::linearizeOplus() {
 
   initializeJacobians(); // handles bottomRows(D);

@@ -30,7 +30,7 @@ void EdgeIneq_f_b_change_limit::computeIneq() {
   _ineq[1] = -(f_b_k - f_b_k_prev) - (delta_f_b_max + slack_3_k); // g(x) <= 0
 }
 
-#ifndef MPC_USE_NUMERICAL_JACOBIAN
+#if MPC_USE_NUMERICAL_JACOBIANS == 0
 void EdgeIneq_f_b_change_limit::linearizeOplus() {
   // The derivative of _ineq[0]  with respect to the vertex[0] (f_b_k_prev)  is
   // -1 The derivative of _ineq[1]  with respect to the vertex[0] (f_b_k_prev)

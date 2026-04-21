@@ -2,6 +2,7 @@ import time
 import os
 import sys
 import numpy as np
+import argparse
 import matplotlib.pyplot as plt
 from data_saver.data_loader import DataLoader
 from datetime import datetime
@@ -18,15 +19,34 @@ def safe_get_float(results, key, default=0.0):
         return default
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python script.py <filename>")
-        filename = "260221_0747_G2O_ISPD_gn_GN_13_3.bin"  # Default filename for testing
-        #sys.exit(1)
-    else:       
-        filename = sys.argv[1]
+    # Set up argument parsing
+    parser = argparse.ArgumentParser(description="Load and plot MPC data.")
     
-    data_file = os.path.join(os.path.dirname(__file__), 'data', filename)
+    # --data flag (defaulting to your specific test file)
+    parser.add_argument('--data', type=str, 
+                        default="260221_0747_G2O_ISPD_gn_GN_13_3.bin",
+                        help="The filename of the data to load")
+    
+    # --dir flag (defaulting to the 'data' folder relative to the script)
+    parser.add_argument('--dir', type=str, 
+                        default=os.path.join(os.path.dirname(__file__), 'data'),
+                        help="The directory where the data file is located")
+
+    args = parser.parse_args()
+
+    # Use the arguments
+    filename = args.data
+    data_dir = args.dir
+    
+    # Construct the full path
+    data_file = os.path.join(data_dir, filename)
+    
     print(f"Loading data from: {data_file}")
+    
+    # Check if file exists to prevent DataLoader crash
+    if not os.path.exists(data_file):
+        print(f"Error: File not found at {data_file}")
+        sys.exit(1)
     
     print_results = False
     # Load all data first
@@ -295,14 +315,17 @@ def main():
         # Save figure
         #timestamp = datetime.now().strftime("%y%m%d_%H%M")
         #output_filename = f"{timestamp}_{AlgIneqType}_{AlgEqType}_{solverType}_{linearSolverType}_{mpcHorizon}"
-        output_filename = filename.split('.')[0]
+        base_name = os.path.splitext(filename)[0]
+        output_path = os.path.join(args.dir, base_name)
         save_format = 1  # Replace with the appropriate logic to determine the format
         if save_format == 1:
-            plt.savefig(f"{output_filename}.pdf", format='pdf', bbox_inches='tight')
-            print(f"\nFigures saved as: {output_filename}.pdf")
+            full_output = f"{output_path}.pdf"
+            plt.savefig(full_output, format='pdf', bbox_inches='tight')
+            print(f"\nFigure saved in data directory: {full_output}")
         elif save_format == 2:
-            plt.savefig(f"{output_filename}.png", dpi=300, bbox_inches='tight')
-            print(f"\nFigures saved as {output_filename}.png")
+            full_output = f"{output_path}.png"
+            plt.savefig(full_output, dpi=300, bbox_inches='tight')
+            print(f"\nFigure saved in data directory: {full_output}")
         
         plt.show(block=False)  # Non-blocking
         plt.pause(15)  # Show for 3 seconds
