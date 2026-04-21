@@ -4,6 +4,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG G2O_COMMIT=eec325a1
 ARG CG2O_COMMIT=eec325a1
 
+ARG ENABLE_PARDISO=OFF
+ENV ENABLE_PARDISO=${ENABLE_PARDISO}
+
+
 # -------------------------------------------------
 # System dependencies
 # -------------------------------------------------
@@ -21,12 +25,14 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-dev \
     python3-venv \
+    python3-matplotlib \
     libeigen3-dev \
     libspdlog-dev \
     libsuitesparse-dev \
     libmetis-dev \
+    libfmt-dev \
     libomp-dev \
-    qtdeclarative5-dev \    
+    qtdeclarative5-dev \
     qt5-qmake \
     libqglviewer-dev-qt5 \
     python3-colcon-common-extensions \
@@ -43,7 +49,7 @@ RUN update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++ 100 && \
     update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100
 
 # -------------------------------------------------
-# Build and install g2o (pinned commit)
+# Build and install g2o
 # -------------------------------------------------
 RUN cd /tmp && \
     git clone https://github.com/RainerKuemmerle/g2o.git && \
@@ -67,39 +73,38 @@ RUN cd /tmp && \
     rm -rf /tmp/g2o
 
 # -------------------------------------------------
-# Intel oneAPI MKL for PARDISO
+# Optional Intel oneAPI MKL for PARDISO
 # -------------------------------------------------
-RUN cd /tmp && \
-    wget -q https://registrationcenter-download.intel.com/akdlm/IRC_NAS/d0df6732-bf5c-493b-a484-6094bea53787/intel-oneapi-hpc-toolkit-2025.1.0.666_offline.sh && \
-    chmod +x intel-oneapi-hpc-toolkit-2025.1.0.666_offline.sh && \
-    sh ./intel-oneapi-hpc-toolkit-2025.1.0.666_offline.sh -a --silent --eula accept && \
-    rm -f intel-oneapi-hpc-toolkit-2025.1.0.666_offline.sh
+RUN if [ "$ENABLE_PARDISO" = "ON" ]; then \
+      cd /tmp && \
+      wget -q https://registrationcenter-download.intel.com/akdlm/IRC_NAS/d0df6732-bf5c-493b-a484-6094bea53787/intel-oneapi-hpc-toolkit-2025.1.0.666_offline.sh && \
+      chmod +x intel-oneapi-hpc-toolkit-2025.1.0.666_offline.sh && \
+      sh ./intel-oneapi-hpc-toolkit-2025.1.0.666_offline.sh -a --silent --eula accept && \
+      rm -f intel-oneapi-hpc-toolkit-2025.1.0.666_offline.sh; \
+    else \
+      echo "Skipping Intel oneAPI installation"; \
+    fi
 
 # -------------------------------------------------
 # Environment
 # -------------------------------------------------
-ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH}
-ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
 ENV PYTHONPATH=/usr/local/lib/python3.12/dist-packages:${PYTHONPATH}
 
-
 # -------------------------------------------------
-# Build and install cg2o main project
+# Build and install cg2o
 # -------------------------------------------------
 RUN cd /tmp && \
     git clone https://github.com/snt-arg/cg2o.git && \
     cd cg2o && \
     mkdir build && cd build && \
     cmake \
-       -DCG2O_BUILD_EXAMPLES=ON \
+       -DCG2O_BUILD_EXAMPLES=OFF \
        -DUSE_G2O_SOLVERS=ON \
-       -DCG2O_BUILD_PARDISO=ON \
+       -DCG2O_BUILD_PARDISO=${ENABLE_PARDISO} \
        -DCG2O_BUILD_EIGEN_SOLVERS=ON \
-       -DCG2O_OPTIMIZER=ISPD\ 
-        # The -DCG2O_OPTIMIZER flag selects which optimizer (ISPD, BIPM, or AL) 
-        # is linked into the example executables.
        .. && \
-    make -j"$(nproc)" \
+    make -j"$(nproc)" && \
     make install && \
     ldconfig && \
     rm -rf /tmp/cg2o
@@ -112,23 +117,10 @@ RUN useradd -s /bin/bash -m cg2o && \
     echo "cg2o:cg2o" | chpasswd && \
     adduser cg2o sudo && \
     mkdir -p /etc/sudoers.d && \
-    echo "cg2o ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/cg2o && \
-    chmod 440 /etc/sudoers.d/cg2o && \
-    chown -R cg2o:cg2o /ws
-    
-#-------------------------------------------------
-# Baschrc setup
-# -------------------------------------------------
-RUN echo "source /opt/ros/jazzy/setup.bash" >> /home/cg2o/.bashrc && \
-    echo "if [ -f /ws/app/ros_ws/install/setup.bash ]; then source /ws/app/ros_ws/install/setup.bash; fi" >> /home/cg2o/.bashrc && \
-    echo 'alias build_all="python3 /ws/scripts/build_all.py"' >> /home/cg2o/.bashrc && \
-    echo 'alias run_test_controller="python3 /ws/app/ros_ws/scripts/run_test_controller.py"' >> /home/cg2o/.bashrc && \
-    echo 'alias build_all="python3 /ws/scripts/build_all.sh"' >> /home/cg2o/.bashrc && \
-    echo 'alias run_all="python3 /ws/scripts/run_all.sh"' >> /home/cg2o/.bashrc && \
-    echo "export OPENBLAS_NUM_THREADS=8" >> /home/cg2o/.bashrc && \
-    echo "export OMP_NUM_THREADS=8" >> /home/cg2o/.bashrc && \
-    echo "export MKL_NUM_THREADS=8" >> /home/cg2o/.bashrc
+    echo "ALL ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/anyuser && \
+    chmod 440 /etc/sudoers.d/anyuser
 
+RUN mkdir -p /ws && chmod 777 /ws
 
 # -------------------------------------------------
 # Startup
