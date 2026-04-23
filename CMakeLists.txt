@@ -4,6 +4,7 @@ project(cg2o LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 
+include(cmake/CompilerSetting.cmake) # Compiler settings
 
 set(CMAKE_LEGACY_CYGWIN_WIN32 0)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment target")
@@ -38,14 +39,11 @@ set(INCLUDES_INSTALL_DIR ${CMAKE_INSTALL_INCLUDEDIR}/cg2o)
 ##options 
 # Configuration option: Default to ISPD optimizer, but allow switching to AL or IPM
 option(CG2O_BUILD_EXAMPLES "Build the examples" OFF)
- option(USE_G2O_SOLVERS "Enable g2o-based solvers (links g2o + csparse and cholmod)" ON)
-option(CG2O_BUILD_PARDISO "allow using the Paradiso solver" ON)
-option(CG2O_BUILD_EIGEN_SOLVERS "allow building the Eigen solver" ON)
-
-set(CG2O_OPTIMIZER "ISPD" CACHE STRING "Optimizer type: ISPD, AL,  or BIPM")
-set_property(CACHE CG2O_OPTIMIZER PROPERTY STRINGS ISPD AL BIPM)
-
-
+option(USE_G2O_SOLVERS "Enable g2o-based solvers (links g2o + csparse and cholmod)" OFF)
+option(CG2O_BUILD_PARDISO "allow using the Paradiso solver" OFF)
+option(CG2O_BUILD_EIGEN_SOLVERS "allow building the Eigen solver" OFF)
+option(CG2O_DEBUG_LINEAR_SOLVER "Enable debug output for linear solvers" ON)
+ 
 
 
 #----------------------------------------------------------------------------------------
@@ -89,6 +87,12 @@ if (OPENMP_FOUND)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
     add_compile_definitions(G2O_USE_OPENMP)
 endif(OPENMP_FOUND)
+
+
+if(CG2O_DEBUG_LINEAR_SOLVER)
+    add_compile_definitions(CG2O_DEBUG_LINEAR_SOLVER=1)
+    message(STATUS "Debug output for linear solvers enabled")
+endif()
 
 if (CG2O_BUILD_EIGEN_SOLVERS)
     add_compile_definitions(CG2O_BUILD_EIGEN_SOLVERS)
@@ -149,17 +153,6 @@ if(CG2O_BUILD_EXAMPLES)
 endif(CG2O_BUILD_EXAMPLES)
 
 
-if(CG2O_OPTIMIZER STREQUAL "AL")
-  add_compile_definitions(USE_AL)
-elseif(CG2O_OPTIMIZER STREQUAL "ISPD")
-  add_compile_definitions(USE_ISPD)
-elseif(CG2O_OPTIMIZER STREQUAL "BIPM")
-  add_compile_definitions(USE_BIPM)
-else()
-  message(FATAL_ERROR "Unknown CG2O_OPTIMIZER=${CG2O_OPTIMIZER}. Use AL, ISPD, or BIPM")
-endif()
-
-
 # add the cg2o extenstion
 add_subdirectory(cg2o)
 
@@ -187,5 +180,7 @@ install(FILES
   ${CMAKE_CURRENT_BINARY_DIR}/cg2oConfigVersion.cmake
   DESTINATION ${CG2O_CONFIG_INSTALL_DIR}
 )
+
+#	add_subdirectory(cpp_code)  
 
 

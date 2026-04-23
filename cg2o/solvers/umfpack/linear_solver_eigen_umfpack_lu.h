@@ -41,6 +41,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include "g2o/stuff/logger.h"
 #include "g2o/stuff/timeutil.h"
 
+#include <filesystem>
+
 namespace cg2o {
 
 /**
@@ -66,6 +68,46 @@ public:
     return true;
   }
 
+  void debug_linear_solver(const auto &A, const double *b = nullptr,
+                           const double *x = nullptr) {
+    using namespace g2o;
+    namespace fs = std::filesystem;
+
+    std::string folder_name = "umfpack_linear_debug";
+
+    // 1. Create folder if it doesn't exist
+    if (!fs::exists(folder_name)) {
+      fs::create_directory(folder_name);
+    }
+
+    // 2. Find the next available index 'x_val'
+    int x_val = 0;
+    while (fs::exists(folder_name + "/" + std::to_string(x_val) + "_Hessian" +
+                      ".txt")) {
+      x_val++;
+    }
+
+    // 3. Define paths for the new files
+    std::string base_path = folder_name + "/";
+    std::string hessian_file =
+        base_path + std::to_string(x_val) + "_Hessian" + ".txt";
+    std::string rhs_file = base_path + std::to_string(x_val) + "_rhs" + ".txt";
+    std::string sol_file =
+        base_path + std::to_string(x_val) + "_solution" + ".txt";
+
+    // 4. Save data (Assumes your existing write functions work)
+    A.writeOctave(hessian_file.c_str());
+    if (b) {
+      writeVector(rhs_file.c_str(), b, A.cols());
+    }
+    if (x) {
+      writeVector(sol_file.c_str(), x, A.cols());
+    }
+
+    std::cout << "Debug files saved to: " << folder_name << " (Index: " << x_val
+              << ")" << std::endl;
+  }
+
   virtual bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
                      double *b) override {
     using namespace g2o;
@@ -83,8 +125,13 @@ public:
 
     if (_umfpackLU.info() != Eigen::Success) {
       G2O_ERROR("UmfPackLU solve failed.");
+      debug_linear_solver(A, b, x);
       return false;
     }
+
+#if CG2O_DEBUG_LINEAR_SOLVER
+    debug_linear_solver(A, b, x);
+#endif
 
     // Collect statistics
     G2OBatchStatistics *globalStats = G2OBatchStatistics::globalStats();
@@ -103,7 +150,8 @@ protected:
   UmfPackLUDecomposition _umfpackLU;
 
   // Compute UmfPackLU decomposition
-  bool computeUmfPackLU(const g2o::SparseBlockMatrix<MatrixType> &A, double &t) {
+  bool computeUmfPackLU(const g2o::SparseBlockMatrix<MatrixType> &A,
+                        double &t) {
     using namespace g2o;
     // Resize matrix if needed
     if (_init)
@@ -124,6 +172,8 @@ protected:
 
     if (_umfpackLU.info() != Eigen::Success) {
       G2O_ERROR("UmfPackLU decomposition failed.");
+      debug_linear_solver(A, nullptr, nullptr);
+
       return false;
     }
 
@@ -165,7 +215,8 @@ protected:
 
   virtual bool solveBlocks_impl(
       const g2o::SparseBlockMatrix<MatrixType> &A,
-      std::function<void(g2o::MarginalCovarianceCholesky &)> /*compute*/) override {
+      std::function<void(g2o::MarginalCovarianceCholesky &)> /*compute*/)
+      override {
     double t;
     if (!computeUmfPackLU(A, t))
       return false;

@@ -27,15 +27,13 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
-
-
 #ifndef G2O_LINEAR_SOLVER_EIGEN_SVD_H
 #define G2O_LINEAR_SOLVER_EIGEN_SVD_H
 
-#include <Eigen/SVD>
 #include <Eigen/Core>
+#include <Eigen/SVD>
 #include <cassert>
-#include <fstream>
+#include <filesystem>
 #include <macros.h>
 
 #include "g2o/core/linear_solver.h"
@@ -47,7 +45,7 @@ namespace cg2o {
  */
 template <typename MatrixType>
 class LinearSolverEigenSVD : public g2o::LinearSolver<MatrixType> {
- public:
+public:
   LinearSolverEigenSVD() : g2o::LinearSolver<MatrixType>(), _reset(true) {}
 
   virtual ~LinearSolverEigenSVD() {}
@@ -57,13 +55,53 @@ class LinearSolverEigenSVD : public g2o::LinearSolver<MatrixType> {
     return true;
   }
 
-  bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x, double *b) {
+  void debug_linear_solver(const auto &A, const double *b = nullptr,
+                           const double *x = nullptr) {
+    using namespace g2o;
+    namespace fs = std::filesystem;
+    std::string folder_name = "svd_linear_debug";
+
+    // 1. Create folder if it doesn't exist
+    if (!fs::exists(folder_name)) {
+      fs::create_directory(folder_name);
+    }
+
+    // 2. Find the next available index 'x_val'
+    int x_val = 0;
+    while (fs::exists(folder_name + "/" + std::to_string(x_val) + "_Hessian" +
+                      ".txt")) {
+      x_val++;
+    }
+
+    // 3. Define paths for the new files
+    std::string base_path = folder_name + "/";
+    std::string hessian_file =
+        base_path + std::to_string(x_val) + "_Hessian" + ".txt";
+    std::string rhs_file = base_path + std::to_string(x_val) + "_rhs" + ".txt";
+    std::string sol_file =
+        base_path + std::to_string(x_val) + "_solution" + ".txt";
+
+    // 4. Save data (Assumes your existing write functions work)
+    A.writeOctave(hessian_file.c_str());
+    if (b) {
+      writeVector(rhs_file.c_str(), b, A.cols());
+    }
+    if (x) {
+      writeVector(sol_file.c_str(), x, A.cols());
+    }
+
+    std::cout << "Debug files saved to: " << folder_name << " (Index: " << x_val
+              << ")" << std::endl;
+  }
+
+  bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+             double *b) {
     using namespace g2o;
 
     int n = A.cols();
     int m = A.cols();
 
-    MatrixX& H = _H;
+    MatrixX &H = _H;
     if (H.cols() != n) {
       H.resize(n, m);
       _reset = true;
@@ -79,7 +117,7 @@ class LinearSolverEigenSVD : public g2o::LinearSolver<MatrixType> {
       int c_size = A.colsOfBlock(i);
       assert(c_idx == A.colBaseOfBlock(i) && "Mismatch in block indices");
 
-      const typename SparseBlockMatrix<MatrixType>::IntBlockMap& col =
+      const typename SparseBlockMatrix<MatrixType>::IntBlockMap &col =
           A.blockCols()[i];
       if (col.size() > 0) {
         typename SparseBlockMatrix<MatrixType>::IntBlockMap::const_iterator it;
@@ -89,7 +127,7 @@ class LinearSolverEigenSVD : public g2o::LinearSolver<MatrixType> {
           if (it->first <= (int)i) {
             int r_size = A.rowsOfBlock(it->first);
             H.block(r_idx, c_idx, r_size, c_size) = *(it->second);
-            if (r_idx != c_idx)  // Write the lower triangular block
+            if (r_idx != c_idx) // Write the lower triangular block
               H.block(c_idx, r_idx, c_size, r_size) = it->second->transpose();
           }
         }
@@ -104,33 +142,19 @@ class LinearSolverEigenSVD : public g2o::LinearSolver<MatrixType> {
     VectorX::ConstMapType bvec(b, n);
 
     xvec = svd.solve(bvec);
-     
-    std::remove("svd_Hessian.txt");
-    std::remove("svd_rhs_debug.txt");
-    std::remove("svd_solution_debug.txt");
-    
 
-    bool debug_flag = true;
-    std::ifstream file("svd_Hessian.txt");  // Try to open the file for reading
-    debug_flag = !file.good();
+#if CG2O_DEBUG_LINEAR_SOLVER
+    debug_linear_solver(A, b, x);
+#endif
 
-   
-    if (debug_flag){
-      A.writeOctave("svd_Hessian.txt");
-      writeVector("svd_rhs_debug.txt", b, m);
-      writeVector("svd_solution_debug.txt", x, m);
-    }
-    
-    
     return svd.info() == Eigen::Success;
-
   }
 
- protected:
+protected:
   bool _reset;
   g2o::MatrixX _H;
 };
 
-}  // namespace cg2o
+} // namespace cg2o
 
 #endif

@@ -11,7 +11,7 @@ private:
   // Parameters as const private member
   const bool space_domain = true;
   const bool linearDynamics = false;
-  const bool linearInequalities = true;
+  const bool linearInequalities = false;
   const bool scaleInequalities = false;
   const bool use_space_domain = true;
   const double domain_switch_threshold =
