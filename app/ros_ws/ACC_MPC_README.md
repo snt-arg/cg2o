@@ -47,21 +47,31 @@ ros2 run acc_control_mpc_g2o acc_control_mpc_g2o_ros \
 
 ## 📡 Send an Action Request
 
-Open a new terminal for the workspace (ros_ws):
+Open every new terminal for the workspace (ros_ws):
 
 ```bash
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 ```
+run the service:
 
-Send a goal:
+ 
+```bash
+ros2 run acc_control_mpc_g2o acc_control_mpc_g2o_ros --ros-args -p numberOfIterations:=120 -p horizon_length:=4
 
+```
+
+
+
+Send a goal from another terminal:
 ```bash
 ros2 action send_goal \
   /acc_control_mpc_g2o_action \
   acc_interfaces/action/AccControlMPC \
-  "{horizon_length: 3, v_p: 0.0, v_h: 0.216081, a_p: 0.0, a_p_weighted: 0.5, d_h: 10.0, force_prev: 1850.0}"
+  "{horizon_length: 4, v_p: 0.0, v_h: 0.216081, a_p: 0.0, a_p_weighted: 0.5, d_h: 10.0, force_prev: 1850.0}"
 ```
+
+Note: The horizon length in the sent goal should match the N configuration value in "/ws/app/ros_ws/packages/acc_stuff/acc_config/acc_controller" if the argument -p horizon_length:=x is not given when run the nodeusing: ros2 run acc_control_mpc_g2o acc_control_mpc_g2o_ros.
 
 ---
 

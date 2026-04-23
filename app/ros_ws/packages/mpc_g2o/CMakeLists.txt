@@ -7,8 +7,17 @@ endif()
 
 include(GNUInstallDirs)
 
+option(CG2O_DEBUG_LINEAR_SOLVER "Enable debug output for linear solvers" OFF)
+
+if(CG2O_DEBUG_LINEAR_SOLVER)
+    add_compile_definitions(CG2O_DEBUG_LINEAR_SOLVER=1)
+    message(STATUS "Debug output for linear solvers enabled")
+endif()
+
+
 
 # find dependencies
+find_package(ament_index_cpp REQUIRED)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
@@ -28,7 +37,6 @@ find_package(cg2o REQUIRED)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../lib
                  ${CMAKE_CURRENT_BINARY_DIR}/lib_build) # here the controller is built as a library and linked to the executable
- 
 
 
 # OpenMP support
@@ -51,7 +59,6 @@ target_include_directories(acc_control_mpc_g2o_ros PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-
 # Link libraries
 target_link_libraries(acc_control_mpc_g2o_ros
   g2o::core
@@ -64,17 +71,16 @@ target_link_libraries(acc_control_mpc_g2o_ros
   yaml-cpp
  )
 
+
+
    
-
-target_compile_definitions(acc_control_mpc_g2o_ros PRIVATE MPC_USE_EXACT_JACOBIANS)
-
-
-
+ 
 
 # Add dependencies
 ament_target_dependencies(acc_control_mpc_g2o_ros
   rclcpp
   rclcpp_action
+  ament_index_cpp
   acc_interfaces
   yaml-cpp
 )
