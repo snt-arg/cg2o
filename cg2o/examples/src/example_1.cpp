@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
   int solverType = (argc > argCount) ? std::atoi(argv[argCount]) : 0;
 
   argCount++;
-  int linearSolverType = (argc > argCount) ? std::atoi(argv[argCount]) : 1;
+  int linearSolverType = (argc > argCount) ? std::atoi(argv[argCount]) : 0;
 
   argCount++;
   int a = (argc > argCount) ? std::atoi(argv[argCount]) : 2;
@@ -356,7 +356,7 @@ int main(int argc, char **argv) {
   optimizer.setEpsilonConstraint(1e-3);
 
   int terminationCriterion =
-      0; // 0 UpdateNorm   1  NewtonDecrement     2 GradientNorm
+      1; // 0 UpdateNorm   1  NewtonDecrement     2 GradientNorm
   optimizer.setConvergenceCriterion(terminationCriterion);
 
   optimizer.optimize(numberOfIterations);
