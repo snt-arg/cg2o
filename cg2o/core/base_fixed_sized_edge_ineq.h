@@ -112,6 +112,29 @@ template <int D, typename E, typename... VertexTypes>
 void BaseFixedSizedEdgeIneq<D, E, VertexTypes...>::computeError() {
   this->computeIneq();
   this->_error = _ineq;
+
+#if CG2O_DEBUG_LINEAR_SOLVER
+  if (!this->error().allFinite()) {
+    std::cout << "========================================== " << std::endl;
+    std::cout << "[WARNING] ****************** Invalid value detected in the "
+                 "ineq edge  "
+                 "****************** [WARNING]"
+              << std::endl;
+    std::cout << "Edge Type: " << typeid(*this).name() << std::endl;
+  }
+  if (false) {
+    std::cout << "Edge ID: " << this->id() << std::endl;
+    std::cout << "Edge Type: " << typeid(*this).name() << std::endl;
+    std::cout << "Error vector Ineq: " << this->error().transpose()
+              << std::endl;
+    std::cout << "Lagrange Multiplier Ineq: "
+              << this->lagrangeMultiplier().transpose() << std::endl;
+    std::cout << "Slack Variable: " << this->slackVariable().transpose()
+              << std::endl;
+    std::cout << "Rho: " << this->rho().transpose() << std::endl;
+    std::cout << "========================================== " << std::endl;
+  }
+#endif
 }
 
 template <int D, typename E, typename... VertexTypes>

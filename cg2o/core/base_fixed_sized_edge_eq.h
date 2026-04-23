@@ -11,7 +11,7 @@ namespace cg2o {
 template <int D, typename E, typename... VertexTypes>
 class G2O_CORE_API BaseFixedSizedEdgeEq
     : public g2o::BaseFixedSizedEdge<2 * D, E, VertexTypes...,
-                                VertexLagrangeMultiplier<D>> {
+                                     VertexLagrangeMultiplier<D>> {
 public:
   using VoidEdgeFuncType =
       std::function<void(BaseFixedSizedEdgeEq<D, E, VertexTypes...> &)>;
@@ -115,6 +115,25 @@ void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::computeError() {
   // Update the error vector
   this->_error.segment(0, D) = _eq;
   this->_error.segment(D, D) = Lagrangian.segment(0, D);
+
+#if CG2O_DEBUG_LINEAR_SOLVER
+  if (!this->error().allFinite()) {
+    std::cout << "========================================== " << std::endl;
+    std::cout << "[WARNING] ****************** Invalid value detected in the "
+                 "eq edge  "
+                 "****************** [WARNING]"
+              << std::endl;
+    std::cout << "Edge Type: " << typeid(*this).name() << std::endl;
+  }
+  if (false) {
+    std::cout << "Edge ID: " << this->id() << std::endl;
+    std::cout << "Error vector Eq: " << this->error().transpose() << std::endl;
+    std::cout << "Lagrange Multiplier Eq: "
+              << this->lagrangeMultiplier().transpose() << std::endl;
+    std::cout << "Rho Eq: " << this->rho().transpose() << std::endl;
+    std::cout << "========================================== " << std::endl;
+  }
+#endif
 }
 
 template <int D, typename E, typename... VertexTypes>
