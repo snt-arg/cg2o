@@ -149,7 +149,8 @@ docker run -it --rm \
  ### Notes
 
 - Run the command from the project root directory.
-- To open a second bash terminal in the running docker container use: 
+- To open an additional Bash session inside the already running Docker container, from **another terminal on your host machine**,  use:
+ 
 ```bash
 docker exec -it cg2o bash
 ```
@@ -171,8 +172,8 @@ cmake \
 make -j$(nproc)
 ```
 
-```markdown
-## To run the examples
+ 
+### To run the examples
 
 After building, you can run the example executables directly from the build directory:
 
@@ -300,7 +301,7 @@ Supports:
 - UMFPACK LU*
 - PARDISO LU*
 
-* Useful for constrained KKT systems.
+- * Useful for constrained KKT systems.
 
 ---
 
