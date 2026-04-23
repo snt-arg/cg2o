@@ -13,6 +13,7 @@ ENV ENABLE_PARDISO=${ENABLE_PARDISO}
 # -------------------------------------------------
 RUN apt-get update && apt-get install -y \
     nano \
+    terminator\
     vim \
     trash-cli \
     git \
