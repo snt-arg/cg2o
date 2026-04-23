@@ -1,3 +1,18 @@
 {
-   "cmake.sourceDirectory": "/mnt/e/repos/cg2o/app/ros_ws/packages/mpc_g2o"
+   "cmake.sourceDirectory": "/mnt/e/repos/cg2o/app/ros_ws/packages/mpc_g2o",
+   "ROS2.distro": "humble",
+   "python.autoComplete.extraPaths": [
+      "/mnt/e/repos/cg2o/app/ros_ws/install/acc_interfaces/local/lib/python3.10/dist-packages",
+      "/mnt/e/1.PhD/factor_graphs/g2o/ideas/unconstrained/mpc/mpc_space/../lib",
+      "/mnt/e/1.PhD/factor_graphs/g2o/ideas/unconstrained/mpc/mpc_space",
+      "/opt/ros/humble/lib/python3.10/site-packages",
+      "/opt/ros/humble/local/lib/python3.10/dist-packages"
+   ],
+   "python.analysis.extraPaths": [
+      "/mnt/e/repos/cg2o/app/ros_ws/install/acc_interfaces/local/lib/python3.10/dist-packages",
+      "/mnt/e/1.PhD/factor_graphs/g2o/ideas/unconstrained/mpc/mpc_space/../lib",
+      "/mnt/e/1.PhD/factor_graphs/g2o/ideas/unconstrained/mpc/mpc_space",
+      "/opt/ros/humble/lib/python3.10/site-packages",
+      "/opt/ros/humble/local/lib/python3.10/dist-packages"
+   ]
 }

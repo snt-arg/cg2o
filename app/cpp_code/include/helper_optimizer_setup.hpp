@@ -91,6 +91,13 @@ void print_resutls(std::vector<double> &results, int N) {
             << resutls.segment(6 * (N + 1) - 4, N).transpose() << "  \n";
   std::cout << "└─────────┴──────────────────────────────────\n";
 }
+
+double min_of_vector(const std::vector<double> &data) {
+  if (data.empty())
+    return std::numeric_limits<double>::quiet_NaN();
+  return *std::min_element(data.begin(), data.end());
+}
+
 void setupLinearSolver(
     int linearSolverType,
     std::unique_ptr<g2o::LinearSolver<g2o::BlockSolverX::PoseMatrixType>>
@@ -200,18 +207,37 @@ void setupAlgorithm(const std::string &solverType,
 
 void oneTimeSimulationG2O(auto &param, auto &mpc, auto &optimizer,
                           int numberOfIterations) {
-  std::vector<double> vp_prediction = {
-      1.85,  2.1625, 2.475, 2.475, 2.475, 2.475, 2.475, 2.475, 2.475, 2.475,
-      2.475, 2.475,  2.475, 2.475, 2.475, 2.475, 2.475, 2.475, 2.475, 2.475,
-      2.475, 2.475,  2.475, 2.475, 2.475, 2.475, 2.475, 2.475, 2.475, 2.475};
+  std::vector<double> vp_prediction = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
   param->set_vp_prediction(vp_prediction);
 
-  param->set_v_h_0(1.42001);
-  param->set_d_h_0(5.8451);
-  param->set_f_t_prev(1601.85);
+  bool use_space_domain =
+      param->isSpaceDomain() && (min_of_vector(param->get_vp_prediction()) >
+                                 param->get_domain_switch_threshold());
+
+  param->set_use_space_domain(use_space_domain);
+  if (use_space_domain) {
+    std::cout << "*************************************************************"
+                 "*************************************************************"
+                 "******** SPACE DOMAIN "
+              << std::endl;
+  }
+  int v_p = vp_prediction[0];
+  if (param->isSpaceDomain()) {
+    v_p = v_p + 0.0;
+    double delta_s = 1.0 * param->get_v_h_0() * param->get_delta_t();
+    param->set_delta_s(delta_s);
+    double delta_s_min = 1.0;
+    if (delta_s < delta_s_min) {
+      param->set_delta_s(delta_s_min);
+    }
+  }
+
+  param->set_v_h_0(0.216081);
+  param->set_d_h_0(10.0);
+  param->set_f_t_prev(1850.0);
   param->set_f_b_prev(0.0);
-  param->set_delta_s(1.42001);
+  // param->set_delta_s(1.42001);
   mpc->setInitialGuess(false); // Set the initial guess
   mpc->setFixedInitialGuess(10.0);
   auto start_time = std::chrono::high_resolution_clock::now();
@@ -219,6 +245,23 @@ void oneTimeSimulationG2O(auto &param, auto &mpc, auto &optimizer,
   std::vector<double> results = mpc->getResults();
   std::cout << "Initial conditions:" << std::endl;
   print_resutls(results, param->get_N());
+#if CG2O_DEBUG_LINEAR_SOLVER
+
+  std::cout << "MPC parameters updated: " << std::endl;
+  std::cout << "v_h_0: " << param->get_v_h_0() << std::endl;
+  std::cout << "d_h_0: " << param->get_d_h_0() << std::endl;
+  std::cout << "f_t_prev: " << param->get_f_t_prev() << std::endl;
+  std::cout << "f_b_prev: " << param->get_f_b_prev() << std::endl;
+  std::cout << "vp_prediction: "
+            << Eigen::Map<Eigen::VectorXd>(param->get_vp_prediction().data(),
+                                           param->get_vp_prediction().size())
+                   .transpose()
+            << std::endl;
+  std::cout << "delta_s: " << param->get_delta_s() << std::endl;
+  std::cout << "use_space_domain: " << param->useSpaceDomain() << std::endl;
+  std::cout << "isLinearInequalities: " << param->isLinearInequalities()
+            << std::endl;
+#endif
 
   auto num_iterations = optimizer->optimize(numberOfIterations);
   results = mpc->getResults();
@@ -239,7 +282,7 @@ void oneTimeSimulationG2O(auto &param, auto &mpc, auto &optimizer,
 double g2o_compute_input(auto &mpc, auto &optimizer, int numberOfIterations,
                          double &compute_time_ms, double &num_iterations,
                          double &cost_level) {
-#if MPC_FEASIBLE_INITIALIZATION==ON
+#if MPC_FEASIBLE_INITIALIZATION
   // Set a feasible initial guess for the optimization
   mpc->setInitialGuess(false);
 #else
@@ -266,12 +309,6 @@ double compute_a_p_predicted(auto &a_p_memory) {
       std::inner_product(weight_accel_memory.begin(), weight_accel_memory.end(),
                          a_p_memory.begin(), 0.0);
   return predicted_accel;
-}
-
-double min_of_vector(const std::vector<double> &data) {
-  if (data.empty())
-    return std::numeric_limits<double>::quiet_NaN();
-  return *std::min_element(data.begin(), data.end());
 }
 
 void update_controller_parameters(int k, auto &mpc, auto &param,

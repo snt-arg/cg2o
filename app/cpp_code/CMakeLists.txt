@@ -5,6 +5,14 @@ project(acc_control_mpc_cg2o)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+
+option(CG2O_DEBUG_LINEAR_SOLVER "Enable debug output for linear solvers" OFF)
+
+if(CG2O_DEBUG_LINEAR_SOLVER)
+    add_compile_definitions(CG2O_DEBUG_LINEAR_SOLVER=1)
+    message(STATUS "Debug output for linear solvers enabled")
+endif()
+
 include(cmake/CompilerSetting.cmake)
 
 find_package(fmt REQUIRED)
@@ -64,7 +72,15 @@ add_executable(${EXEC_NAME} src/main.cpp)
 target_compile_definitions(${EXEC_NAME} PRIVATE 
                             PROJECT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
-target_compile_definitions(${EXEC_NAME} PRIVATE MPC_FEASIBLE_INITIALIZATION=0)
+option(MPC_FEASIBLE_INITIALIZATION "Enable feasible initialization" OFF)
+
+# 2. Pass it to your C++ code
+if(MPC_FEASIBLE_INITIALIZATION)
+    target_compile_definitions(${EXEC_NAME} PRIVATE MPC_FEASIBLE_INITIALIZATION=1)
+else()
+    target_compile_definitions(${EXEC_NAME} PRIVATE MPC_FEASIBLE_INITIALIZATION=0)
+endif()
+
 
 target_link_libraries(${EXEC_NAME} PRIVATE
     g2o::core
@@ -78,6 +94,10 @@ target_link_libraries(${EXEC_NAME} PRIVATE
     yaml-cpp
 )
 
+
+
+
+ 
 target_include_directories(${EXEC_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../lib/data_saver
@@ -117,7 +137,7 @@ endif()
 if(TARGET g2o::solver_cholmod AND TARGET g2o::solver_csparse)
     target_compile_definitions(${EXEC_NAME} PRIVATE MPC_USE_G2O_SOLVERS)
     target_link_libraries(${EXEC_NAME} PRIVATE g2o::solver_cholmod  g2o::solver_csparse)
-    message(STATUS "Found cg2o Eigen solvers")
+    message(STATUS "Found g2o solvers")
 endif()
 
  
