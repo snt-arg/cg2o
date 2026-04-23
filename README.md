@@ -122,24 +122,37 @@ Examples:
 docker build \
   --build-arg ENABLE_PARDISO=OFF \
   -t arg/cg2o \
-  -f ../docker/Dockerfile ..
+  -f ./docker/Dockerfile .
 ```
 
 ### Run Container
+To start the Docker container, use the provided helper script:
 
 ```bash
-PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+./scripts/runDocker.sh
+```
+This script automatically applies the required workspace mounting, display forwarding, and user permission settings.
+Alternatively, the container can be started manually using:
+
+```bash
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 docker run -it --rm \
-    --name cg2o \
-    --user $(id -u):$(id -g) \
-    -v /tmp/.X11-unix:/tmp/.X11-unix \
-    -e DISPLAY="$DISPLAY" \
-    -v "$PROJECT_ROOT:/ws" \
-    arg/cg2o
+  --name cg2o \
+  --user $(id -u):$(id -g) \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -e DISPLAY="$DISPLAY" \
+  -v "$PROJECT_ROOT:/ws" \
+  arg/cg2o
 ```
 
----
+ ### Notes
+
+- Run the command from the project root directory.
+- To open a second bash terminal in the running docker container use: 
+```bash
+docker exec -it cg2o bash
+```
 
 ## Build Library + Examples
 
@@ -192,11 +205,12 @@ This is the recommended configuration and corresponds to the main proposed solve
 cd /ws/app/cpp_code && \
 mkdir -p build && cd build && \
 rm -rf CMakeFiles && rm -f CMakeCache.txt && \
-cmake .. \
+cmake  \
   -DMPC_FEASIBLE_INITIALIZATION=OFF \
   -DMPC_CG2O_OPTIMIZER=ISPD \
   -DMPC_USE_NUMERICAL_JACOBIANS=OFF \
-  -DCG2O_DEBUG_LINEAR_SOLVER=OFF && \
+  -DCG2O_DEBUG_LINEAR_SOLVER=OFF \
+  .. && \
 make -j$(nproc)
 ```
 
@@ -231,7 +245,8 @@ cmake .. \
   -DMPC_FEASIBLE_INITIALIZATION=ON \
   -DMPC_CG2O_OPTIMIZER=BIPM \
   -DMPC_USE_NUMERICAL_JACOBIANS=OFF \
-  -DCG2O_DEBUG_LINEAR_SOLVER=OFF && \
+  -DCG2O_DEBUG_LINEAR_SOLVER=OFF \
+  .. && \
 make -j$(nproc)
 ```
  
