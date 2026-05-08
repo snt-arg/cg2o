@@ -3,6 +3,14 @@
 > **cg2o** — Constrained General Graph Optimization  
 > A modern extension of **g2o** for **hard-constrained factor graph optimization**, introducing native support for **nonlinear inequality and equality constraints** using advanced optimization methods for robotics, control, and large-scale sparse systems.
 
+
+## Important Note
+
+The experiment video is available through Google Drive.  
+Please note that the link in the paper may not work, so the experiment video should be opened using the link below:
+
+[Experiment Video](https://drive.google.com/file/d/1D5Szbq0rx6m6J8egvvjbGFpykSk1dnAy/view)
+
 ---
 
 ## Overview
