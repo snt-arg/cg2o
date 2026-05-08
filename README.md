@@ -250,6 +250,14 @@ cmake .. \
   .. && \
 make -j$(nproc)
 ```
+
+### Run the example 
+
+To run the example use the following terminal command:
+
+```bash
+/ws/app/adaptive_cruise_control/cpp_code/results/data/mpc_g2o_exc
+```
  
 ---
 
@@ -268,7 +276,7 @@ Before building, source your ROS2 installation and compile the workspace using `
 ```bash
 source /opt/ros/jazzy/setup.bash && \
 cd /ws/app/adaptive_cruise_control/ros_ws && \
-rm -rf build install log && \
+sudo rm -rf build install log && \
 colcon build
 ```
 
@@ -276,13 +284,28 @@ colcon build
 After building, source the workspace and run the ROS2 node together with a test action goal using the following one-line command:
 
 ```bash
-	source /ws/app/adaptive_cruise_control/ros_ws/install/setup.bash && \
-	ros2 run acc_control_mpc_g2o acc_control_mpc_g2o_ros --ros-args -p numberOfIterations:=40 -p horizon_length:=3 & \
-	sleep 2; \
-	ros2 action send_goal /acc_control_mpc_g2o_action acc_interfaces/action/AccControlMPC "{horizon_length: 3, v_p: 15.0, v_h: 12.0, a_p: 0.5, a_p_weighted: 0.5, d_h: 14.5, force_prev: 10.0}"; \
-	pkill -9 -f acc_control_mpc_g2o_ros
+bash -lc '
+source /ws/app/adaptive_cruise_control/ros_ws/install/setup.bash
+
+ros2 run acc_control_mpc_g2o acc_control_mpc_g2o_ros \
+    --ros-args \
+    -p numberOfIterations:=40 \
+    -p horizon_length:=3 &
+
+SERVER_PID=$!
+
+until ros2 action list -t | grep -q "/acc_control_mpc_g2o_action.*acc_interfaces/action/AccControlMPC"; do
+    sleep 0.5
+done
+
+ros2 action send_goal \
+    /acc_control_mpc_g2o_action \
+    acc_interfaces/action/AccControlMPC \
+    "{horizon_length: 3, v_p: 15.0, v_h: 12.0, a_p: 0.5, a_p_weighted: 0.5, d_h: 14.5, force_prev: 10.0}"
+
+pkill -INT -f acc_control_mpc_g2o_ros
+'
 ```
- 
  ### Notes
 
 - `numberOfIterations` specifies the maximum number of optimizer iterations.
