@@ -1,0 +1,9 @@
+    cmake \
+       -DCG2O_BUILD_EXAMPLES=OFF \
+       -DCG2O_DEBUG_LINEAR_SOLVER=ON \
+       -DCG2O_BUILD_PARDISO=ON \
+       -DCG2O_BUILD_EIGEN_SOLVERS=ON\
+       -DUSE_G2O_SOLVERS=ON \
+       -DCMAKE_BUILD_TYPE=Debug \
+       .. && \
+     make -j"$(nproc)" 

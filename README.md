@@ -190,7 +190,7 @@ After building, you can run the example executables directly from the build dire
 In addition to the built-in cg2o examples, this repository also provides a standalone MPC application located in:
 
 ```bash
-app/cpp_code
+app/adaptive_cruise_control/cpp_code
 ```
 
 This project is independent from the library examples and demonstrates how cg2o can be used in a separate application after the library has been built and installed.
@@ -203,7 +203,7 @@ This is the recommended configuration and corresponds to the main proposed solve
 
  
 ```bash
-cd /ws/app/cpp_code && \
+cd /ws/app/adaptive_cruise_control/cpp_code && \
 mkdir -p build && cd build && \
 rm -rf CMakeFiles && rm -f CMakeCache.txt && \
 cmake  \
@@ -219,7 +219,7 @@ make -j$(nproc)
 ### Run the Standalone MPC Project
 
 ```bash
-/ws/app/cpp_code/results/data/mpc_g2o_exc
+/ws/app/adaptive_cruise_control/cpp_code/results/data/mpc_g2o_exc
 ```
 
 
@@ -227,7 +227,7 @@ make -j$(nproc)
 To change controller parameters, solver settings, or scenario values, modify:
 
 ```bash
-/ws/app/cpp_code/config/config.yaml
+/ws/app/adaptive_cruise_control/cpp_code/config/config.yaml
 ```
 
 
@@ -239,7 +239,7 @@ This mode requires: feasible initialization of the MPC problem
  
 
 ```bash
-cd /ws/app/cpp_code && \
+cd /ws/app/adaptive_cruise_control/cpp_code && \
 mkdir -p build && cd build && \
 rm -rf CMakeFiles && rm -f CMakeCache.txt && \
 cmake .. \
@@ -267,7 +267,7 @@ Before building, source your ROS2 installation and compile the workspace using `
 
 ```bash
 source /opt/ros/jazzy/setup.bash && \
-cd /ws/app/ros_ws && \
+cd /ws/app/adaptive_cruise_control/ros_ws && \
 rm -rf build install log && \
 colcon build
 ```
@@ -276,7 +276,7 @@ colcon build
 After building, source the workspace and run the ROS2 node together with a test action goal using the following one-line command:
 
 ```bash
-	source /ws/app/ros_ws/install/setup.bash && \
+	source /ws/app/adaptive_cruise_control/ros_ws/install/setup.bash && \
 	ros2 run acc_control_mpc_g2o acc_control_mpc_g2o_ros --ros-args -p numberOfIterations:=40 -p horizon_length:=3 & \
 	sleep 2; \
 	ros2 action send_goal /acc_control_mpc_g2o_action acc_interfaces/action/AccControlMPC "{horizon_length: 3, v_p: 15.0, v_h: 12.0, a_p: 0.5, a_p_weighted: 0.5, d_h: 14.5, force_prev: 10.0}"; \

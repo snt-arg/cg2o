@@ -22,18 +22,13 @@ source /opt/ros/jazzy/setup.bash
 colcon build
 source install/setup.bash
 ```
-
-
----
-
-## ▶️ Run the Node
-
+In case you are using humble 
 ```bash
-ros2 run acc_control_mpc_g2o acc_control_mpc_g2o_ros \
-  --ros-args \
-  -p numberOfIterations:=120 \
-  -p algIneqSettings:="[0.01, 1500.0, 10.0]"
+source /opt/ros/humble/setup.bash
+colcon build
+source install/setup.bash
 ```
+---
 
 ### Parameters
 
@@ -53,6 +48,14 @@ Open every new terminal for the workspace (ros_ws):
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 ```
+
+or in case of humble
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+```
+
 run the service:
 
  
