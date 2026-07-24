@@ -227,16 +227,16 @@ template <int D, typename E, typename... VertexTypes>
 bool SparseOptimizerAL::addEdgeEqImpl(
     BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e) {
   // create new vertex for the lagrangian
-  auto vLagrangian = std::make_shared<VertexLagrangeMultiplier<D>>();
+  auto *vLagrangian = new VertexLagrangeMultiplier<D>();
   // auto* nu = new VertexLagrangeMultiplier<D>();
   vLagrangian->setId(e->getVertexLagrangeMultiplierId());
   vLagrangian->setInitialValue(_lagrange_multiplier_initial_eq);
 
   // Add the Nu vertex to the optimizer
-  this->addVertex(vLagrangian.get());
+  this->addVertex(vLagrangian);
 
   // assign the vertex to the edge
-  e->setVertex(e->vertices().size() - 1, vLagrangian.get());
+  e->setVertex(e->vertices().size() - 1, vLagrangian);
 
   bool eresult = OptimizableGraph::addEdge(e);
   if (!eresult) {

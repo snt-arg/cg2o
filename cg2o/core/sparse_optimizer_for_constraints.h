@@ -153,7 +153,7 @@ public:
   double NumInnerIterationsMax();
 
 protected:
-  std::vector<std::shared_ptr<g2o::OptimizableGraph::Vertex>>
+  std::vector<g2o::OptimizableGraph::Vertex*>
       _vEqLagrangeMultipliers; // Set of Lagrangian vertices
   std::unordered_map<void *, std::function<void()>>
       updateMultipliersEqFunctionMap;
