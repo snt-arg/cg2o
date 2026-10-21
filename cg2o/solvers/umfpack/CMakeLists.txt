@@ -4,6 +4,7 @@ set(SOURCE_FILES
 
 set(HEADER_FILES
   linear_solver_eigen_umfpack_lu.h
+  linear_solver_umfpack_fast.h
 )
 
 find_path(UMFPACK_INCLUDE_DIR

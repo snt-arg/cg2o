@@ -129,6 +129,27 @@ public:
   void updateEdgeVertices(OptimizableGraph::Edge *edge, const double *update,
                           double scalingFactor = 1.0);
 
+  // Multiplier (dual) regularization assembled by the equality edges, used by
+  // ISPD and BIPM (AL keeps its multipliers fixed, so it has no zero block).
+  // With sigma > 0 every equality edge builds its Hessian block with
+  //   Omega_H = [[0, I], [I, -sigma I]]   instead of   [[0, I], [I, 0]],
+  // while the right-hand side keeps the exact weighted error -[[0,I],[I,0]] e.
+  // The linear system becomes
+  //   [H  J^T     ] [dx ]   [-grad f - J^T nu]
+  //   [J  -sigma I] [dnu] = [-h              ]
+  // (proximal method of multipliers / stabilized SQP step). It is symmetric
+  // quasi-definite when H is positive definite, so any LDL^T without pivoting
+  // factors it (LinearSolverEigenQDLDLT, cg2o LinearSolverEigenLDLT, CHOLMOD
+  // in simplicial mode); Cholesky (LL^T) solvers still cannot. The step is
+  // biased by about sigma / lambda_min(J H^-1 J^T) but the fixed point is
+  // exact (dnu = 0 => h = 0). Pick
+  //   eps_mach * max diag(H)  <<  sigma  <<  lambda_min(J H^-1 J^T);
+  // 1e-8 .. 1e-6 worked for the cg2o NMPC and ACC tests. 0 (default) keeps
+  // the exact KKT matrix. This is the default for all equality edges;
+  // BaseFixedSizedEdgeEq::setDualRegularization overrides it per edge.
+  void setEqualityRegularization(double sigma) { _eq_regularization = sigma; }
+  double equalityRegularization() const { return _eq_regularization; }
+
   // Termination
 
   TerminationCriteria &terminationCriteria();
@@ -176,6 +197,12 @@ protected:
              // up
 
   void defineAlphaBacktracking(double alpha);
+
+  double _eq_regularization = 0.0; // see setEqualityRegularization()
+  // installs the equality-edge quadratic form that applies the regularization
+  template <int D, typename E, typename... VertexTypes>
+  void installEqualityQuadraticForm(
+      BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e);
 };
 
 } // namespace cg2o

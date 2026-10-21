@@ -33,7 +33,9 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
 #include <Eigen/src/Core/util/Constants.h>
+#include <algorithm>
 #include <cassert>
+#include <vector>
 
 #include "g2o/core/batch_stats.h"
 #include "g2o/core/linear_solver.h"
@@ -54,7 +56,11 @@ public:
   typedef Eigen::SparseMatrix<double, Eigen::ColMajor> SparseMatrix;
   typedef Eigen::Triplet<double> Triplet;
 
-  using ldltDecomposition = Eigen::SimplicialLDLT<SparseMatrix>;
+  // Upper: g2o fills only the upper triangle, so Eigen can use it directly.
+  // (With the default Lower, passing selfadjointView<Upper>() made Eigen build
+  // a temporary full copy of the matrix on every factorization.)
+  using ldltDecomposition =
+      Eigen::SimplicialLDLT<SparseMatrix, Eigen::Upper, Eigen::AMDOrdering<int>>;
 
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -96,6 +102,9 @@ protected:
   bool _init;
   SparseMatrix _sparseMatrix;
   ldltDecomposition _ldlt;
+  // sparsity pattern of the last symbolic analysis (see computeLDLT)
+  bool _analyzed = false;
+  std::vector<int> _patternOuter, _patternInner;
 
   // Compute LDLT decomposition
   bool computeLDLT(const g2o::SparseBlockMatrix<MatrixType> &A, double &t) {
@@ -103,14 +112,15 @@ protected:
     if (_init)
       _sparseMatrix.resize(A.rows(), A.cols());
     fillSparseMatrix(A, !_init);
-    if (_init)
+    // g2o calls init() at every optimize(). Redo the ordering and symbolic
+    // analysis only if the sparsity pattern actually changed (in MPC it never
+    // does), instead of at every optimize().
+    if (_init && !samePattern())
       computeSymbolicDecomposition();
     _init = false;
 
     t = g2o::get_monotonic_time();
-    _ldlt.factorize(
-        _sparseMatrix
-            .selfadjointView<Eigen::Upper>()); // Perform LDLT decomposition
+    _ldlt.factorize(_sparseMatrix); // upper triangle, see ldltDecomposition
     if (_ldlt.info() != Eigen::Success) {
       if (this->writeDebug()) {
         G2O_ERROR("LDLT decomposition failed, writing debug.txt");
@@ -133,12 +143,38 @@ protected:
   void computeSymbolicDecomposition() {
     using namespace g2o;
     double t = g2o::get_monotonic_time();
-    _ldlt.analyzePattern(_sparseMatrix.selfadjointView<Eigen::Upper>());
+    _ldlt.analyzePattern(_sparseMatrix);
+    storePattern();
     _init = false; // Mark as initialized
 
     G2OBatchStatistics *globalStats = G2OBatchStatistics::globalStats();
     if (globalStats)
       globalStats->timeSymbolicDecomposition = get_monotonic_time() - t;
+  }
+
+  bool samePattern() const {
+    if (!_analyzed)
+      return false;
+    const int n = static_cast<int>(_sparseMatrix.cols());
+    if (static_cast<int>(_patternOuter.size()) != n + 1)
+      return false;
+    const int *outer = _sparseMatrix.outerIndexPtr();
+    if (!std::equal(outer, outer + n + 1, _patternOuter.begin()))
+      return false;
+    const int nnz = outer[n];
+    if (static_cast<int>(_patternInner.size()) != nnz)
+      return false;
+    const int *inner = _sparseMatrix.innerIndexPtr();
+    return std::equal(inner, inner + nnz, _patternInner.begin());
+  }
+
+  void storePattern() {
+    const int n = static_cast<int>(_sparseMatrix.cols());
+    const int *outer = _sparseMatrix.outerIndexPtr();
+    _patternOuter.assign(outer, outer + n + 1);
+    const int *inner = _sparseMatrix.innerIndexPtr();
+    _patternInner.assign(inner, inner + outer[n]);
+    _analyzed = true;
   }
 
   void fillSparseMatrix(const g2o::SparseBlockMatrix<MatrixType> &A,
@@ -160,13 +196,14 @@ protected:
       const g2o::SparseBlockMatrix<MatrixType> &A,
       std::function<void(g2o::MarginalCovarianceCholesky &)> /*compute*/)
       override {
-    double t;
-    if (!computeLDLT(A, t))
-      return false;
-
-    g2o::MarginalCovarianceCholesky mcc;
-    // Configure MarginalCovarianceCholesky (optional)
-    return true;
+    // Marginal covariances are not implemented here. Returning true (as
+    // before) made SparseOptimizer::computeMarginals report success with an
+    // empty result. Use LinearSolverEigenQDLDLT, which supports them for SPD
+    // systems.
+    (void)A;
+    G2O_WARN("LinearSolverEigenLDLT does not support marginal covariances; "
+             "use LinearSolverEigenQDLDLT");
+    return false;
   }
 };
 

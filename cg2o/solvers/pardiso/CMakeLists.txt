@@ -4,6 +4,7 @@ set(SOURCE_FILES
 
 set(HEADER_FILES
   linear_solver_eigen_pardiso_lu.h
+  linear_solver_pardiso_fast.h
 )
 
 add_library(solver_eigen_pardiso ${G2O_LIB_TYPE}

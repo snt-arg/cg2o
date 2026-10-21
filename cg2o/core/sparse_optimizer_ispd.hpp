@@ -422,6 +422,7 @@ bool SparseOptimizerISPD::addEdgeEqImpl(
 
   vLagrangian->setFixed(false);
   e->initializeInformationMatrix();
+  this->installEqualityQuadraticForm(e); // optional -sigma I block
 
   // add teh edge to the set of inequality set
   _edgeEqSet.insert(e);

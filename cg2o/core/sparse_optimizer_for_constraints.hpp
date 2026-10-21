@@ -301,6 +301,20 @@ bool SparseOptimizerForConstraints<Derived>::addEdgeEq(
   return static_cast<Derived *>(this)->addEdgeEqImpl(e);
 }
 
+// Equality edges get a quadratic-form callback that applies the optimizer's
+// default dual regularization unless the edge has its own value.
+template <typename Derived>
+template <int D, typename E, typename... VertexTypes>
+void SparseOptimizerForConstraints<Derived>::installEqualityQuadraticForm(
+    BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e) {
+  e->setConstructQuadraticFormImpl(
+      [this](BaseFixedSizedEdgeEq<D, E, VertexTypes...> &edge) {
+        const double own = edge.dualRegularization();
+        edge.constructQuadraticFormRegularized(own >= 0.0 ? own
+                                                          : _eq_regularization);
+      });
+}
+
 // Termination functions
 template <typename Derived>
 TerminationCriteria &

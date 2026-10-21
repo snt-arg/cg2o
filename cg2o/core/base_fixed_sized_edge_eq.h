@@ -4,6 +4,7 @@
 #include "g2o/core/base_fixed_sized_edge.h"
 #include "vertex_lagrange_multiplier.h"
 #include <Eigen/Core>
+#include <utility>
 #include <vector>
 
 namespace cg2o {
@@ -34,6 +35,23 @@ public:
   // Setter for the function pointers
   void setConstructQuadraticFormImpl(const VoidEdgeFuncType &func);
 
+  /**
+   * Dual (multiplier) regularization of this equality constraint.
+   * The error is e = [h(x); nu] with information Omega = [[0, I], [I, 0]].
+   * With sigma > 0 the Hessian block is built with
+   *   Omega_H = [[0, I], [I, -sigma I]]
+   * and the gradient with the exact Omega, so this constraint contributes
+   *   [[0, J^T], [J, -sigma I]] to the Hessian (rows/cols x, nu) and
+   *   -[J^T nu; h] to the right-hand side.
+   * The sign must be negative (proximal method of multipliers); +sigma gives
+   * a wrong step. sigma < 0 (default): use the optimizer's
+   * setEqualityRegularization() value; sigma = 0: exact KKT for this edge.
+   */
+  void setDualRegularization(double sigma) { _dualRegularization = sigma; }
+  double dualRegularization() const { return _dualRegularization; }
+  //! assembles this edge's Hessian blocks and gradient with the given sigma
+  void constructQuadraticFormRegularized(double sigma);
+
   // Setter
   void
   setLagrangeMultiplier(const Eigen::Matrix<double, D, 1> &lagrangeMuliplier);
@@ -58,6 +76,7 @@ protected:
   void initializeJacobians();
 
   VoidEdgeFuncType _constructQuadraticFormImpl = nullptr;
+  double _dualRegularization = -1.0; // < 0: use the optimizer's default
 
   // In case Rho is used
   Eigen::Matrix<double, D, 1> _rho;
@@ -178,12 +197,31 @@ void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::constructQuadraticForm() {
   if (_constructQuadraticFormImpl) {
     _constructQuadraticFormImpl(
         *this); // Call the assigned function (or lambda)
+  } else if (_dualRegularization > 0.0) {
+    constructQuadraticFormRegularized(_dualRegularization);
   } else {
     // If no function is assigned, call the base class implementation (if
     // needed)
     g2o::BaseFixedSizedEdge<
         2 * D, E, VertexTypes...,
         VertexLagrangeMultiplier<D>>::constructQuadraticForm();
+  }
+}
+
+template <int D, typename E, typename... VertexTypes>
+void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::
+    constructQuadraticFormRegularized(double sigma) {
+  constexpr std::size_t nv = sizeof...(VertexTypes) + 1; // + multiplier vertex
+  // right-hand side with the exact information: -Omega e = -[nu; h]
+  const auto weightedError = (-(this->_information * this->_error)).eval();
+  if (sigma > 0.0) {
+    auto omegaH = this->_information; // [[0, I], [I, 0]]
+    omegaH.diagonal().template tail<D>().array() -= sigma;
+    this->constructQuadraticFormNs(omegaH, weightedError,
+                                   std::make_index_sequence<nv>());
+  } else {
+    this->constructQuadraticFormNs(this->_information, weightedError,
+                                   std::make_index_sequence<nv>());
   }
 }
 

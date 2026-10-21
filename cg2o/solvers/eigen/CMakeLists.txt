@@ -15,6 +15,7 @@ set(HEADER_FILES
   linear_solver_eigen_lu.h 
   linear_solver_eigen_qr.h 
   linear_solver_eigen_ldlt.h   
+  linear_solver_eigen_qdldlt.h
   linear_solver_eigen_dense_full_lu.h 
   linear_solver_eigen_dense_partial_lu.h
   linear_solver_eigen_dense_qr.h
