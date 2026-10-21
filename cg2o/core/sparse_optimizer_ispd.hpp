@@ -190,7 +190,7 @@ void SparseOptimizerISPD::edgeProcessing(EdgeType *edge, int controller) {
             predicted_error.setZero();
             edge->computeError();
 
-            auto jacobianWorkspace = this->jacobianWorkspace();
+            auto &jacobianWorkspace = this->jacobianWorkspace();
             edge->linearizeOplus(jacobianWorkspace);
 
             edge->computeJacobianUpdateProduct(update, predicted_error);
