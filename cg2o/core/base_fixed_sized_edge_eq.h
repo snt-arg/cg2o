@@ -51,6 +51,19 @@ public:
   double dualRegularization() const { return _dualRegularization; }
   //! assembles this edge's Hessian blocks and gradient with the given sigma
   void constructQuadraticFormRegularized(double sigma);
+  /**
+   * Closed-form assembly for the standard information matrix Omega =
+   * [[0, I], [I, 0]] (ISPD, BIPM). With J_i the first D rows of the Jacobian
+   * of vertex i (dh/dx_i) and nu the multiplier, the contributions are
+   *   H(x_i, x_j) = 0,  H(x_i, nu) = J_i^T,  H(nu, nu) = -sigma I,
+   *   b(x_i) = -J_i^T nu,  b(nu) = -h,
+   * so the dense J^T Omega J products of the generic path are not needed.
+   * Used automatically by constructQuadraticFormRegularized().
+   */
+  void constructQuadraticFormFast(double sigma);
+  //! false: always use the generic g2o assembly (default true; for A/B testing)
+  void setClosedFormAssembly(bool on) { _closedForm = on; }
+  bool closedFormAssembly() const { return _closedForm; }
 
   // Setter
   void
@@ -77,6 +90,14 @@ protected:
 
   VoidEdgeFuncType _constructQuadraticFormImpl = nullptr;
   double _dualRegularization = -1.0; // < 0: use the optimizer's default
+  bool _standardOmega = false; // true while _information == [[0,I],[I,0]]
+  bool _closedForm = true;
+
+private:
+  template <std::size_t I>
+  void assemblePrimal(const Eigen::Matrix<double, D, 1> &nu);
+
+protected:
 
   // In case Rho is used
   Eigen::Matrix<double, D, 1> _rho;
@@ -160,6 +181,7 @@ void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::initializeInformationMatrix() {
   this->_information.setZero();
   this->_information.template block<D, D>(0, D).setIdentity();
   this->_information.template block<D, D>(D, 0).setIdentity();
+  _standardOmega = true;
 }
 
 template <int D, typename E, typename... VertexTypes>
@@ -197,7 +219,7 @@ void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::constructQuadraticForm() {
   if (_constructQuadraticFormImpl) {
     _constructQuadraticFormImpl(
         *this); // Call the assigned function (or lambda)
-  } else if (_dualRegularization > 0.0) {
+  } else if (_dualRegularization >= 0.0) {  // explicit sigma, 0 = exact KKT (closed form)
     constructQuadraticFormRegularized(_dualRegularization);
   } else {
     // If no function is assigned, call the base class implementation (if
@@ -211,6 +233,10 @@ void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::constructQuadraticForm() {
 template <int D, typename E, typename... VertexTypes>
 void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::
     constructQuadraticFormRegularized(double sigma) {
+  if (_standardOmega && _closedForm) {
+    constructQuadraticFormFast(sigma);
+    return;
+  }
   constexpr std::size_t nv = sizeof...(VertexTypes) + 1; // + multiplier vertex
   // right-hand side with the exact information: -Omega e = -[nu; h]
   const auto weightedError = (-(this->_information * this->_error)).eval();
@@ -226,15 +252,64 @@ void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::
 }
 
 template <int D, typename E, typename... VertexTypes>
+void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::constructQuadraticFormFast(
+    double sigma) {
+  constexpr std::size_t NV = sizeof...(VertexTypes); // multiplier vertex index
+  const Eigen::Matrix<double, D, 1> h = this->_error.template head<D>();
+  const Eigen::Matrix<double, D, 1> nu = this->_error.template tail<D>();
+
+  auto *vnu = this->template vertexXn<NV>();
+  if (!vnu->fixed()) {
+    g2o::internal::QuadraticFormLock lck(*vnu);
+    (void)lck;
+    vnu->b().noalias() -= h;
+    if (sigma > 0.0)
+      vnu->A().diagonal().array() -= sigma; // H(nu, nu) = -sigma I
+  }
+  [&]<std::size_t... I>(std::index_sequence<I...>) {
+    (this->template assemblePrimal<I>(nu), ...);
+  }(std::make_index_sequence<NV>());
+}
+
+template <int D, typename E, typename... VertexTypes>
+template <std::size_t I>
+void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::assemblePrimal(
+    const Eigen::Matrix<double, D, 1> &nu) {
+  constexpr std::size_t NV = sizeof...(VertexTypes);
+  auto *v = this->template vertexXn<I>();
+  if (v->fixed())
+    return;
+  const auto J = std::get<I>(this->_jacobianOplus).template topRows<D>();
+  {
+    g2o::internal::QuadraticFormLock lck(*v);
+    (void)lck;
+    v->b().noalias() -= J.transpose() * nu; // b(x_i) -= J_i^T nu
+  }
+  auto *vnu = this->template vertexXn<NV>();
+  if (vnu->fixed())
+    return;
+  constexpr int K =
+      g2o::internal::pair_to_index(static_cast<int>(I), static_cast<int>(NV));
+  g2o::internal::QuadraticFormLock lck(*vnu);
+  (void)lck;
+  if (this->_hessianRowMajor[K])
+    std::get<K>(this->_hessianTupleTransposed).noalias() += J;
+  else
+    std::get<K>(this->_hessianTuple).noalias() += J.transpose();
+}
+
+template <int D, typename E, typename... VertexTypes>
 void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::setInformation(
     const InformationType &information) {
   this->_information = information;
+  _standardOmega = false;
 }
 
 template <int D, typename E, typename... VertexTypes>
 void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::setConstraintViolationPrev(
     Eigen::Matrix<double, D, 1> &&input, size_t start) {
   this->_information.diagonal().segment(start, D) = input;
+  _standardOmega = false;
 }
 
 template <int D, typename E, typename... VertexTypes>
