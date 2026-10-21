@@ -1,5 +1,6 @@
 set(SOURCE_FILES
   solver_eigen_umfpack_lu.cpp
+  solver_umfpack_fast.cpp
 )
 
 set(HEADER_FILES

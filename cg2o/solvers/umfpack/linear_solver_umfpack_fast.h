@@ -72,8 +72,18 @@ class LinearSolverUmfpackFast : public g2o::LinearSolverCCS<MatrixType> {
     return true;
   }
 
+  // g2o's GN/LM apply the update vector even when solve() fails, so a
+  // failed solve leaves x = 0 (no step) instead of stale values.
   bool solve(const g2o::SparseBlockMatrix<MatrixType>& A, double* x,
              double* b) override {
+    if (solveImpl(A, x, b)) return true;
+    std::fill(x, x + A.rows(), 0.0);
+    return false;
+  }
+
+ protected:
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType>& A, double* x,
+                 double* b) {
     const double t0 = g2o::get_monotonic_time();
     if (!fillMatrix(A)) return false;
     applyControl();
@@ -103,10 +113,14 @@ class LinearSolverUmfpackFast : public g2o::LinearSolverCCS<MatrixType> {
     }
     if (_numRegularized > 0) refine(x, b);  // nothing to undo otherwise
     setStat(false, g2o::get_monotonic_time() - t1);
+    for (int i = 0; i < _n; ++i)
+      if (!std::isfinite(x[i])) {
+        G2O_ERROR("LinearSolverUmfpackFast: solve produced non-finite values");
+        return false;
+      }
     return true;
   }
 
- protected:
   Options _opt;
   bool _init = true;
   int _n = 0;

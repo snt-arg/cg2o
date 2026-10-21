@@ -53,7 +53,9 @@ namespace cg2o {
  *
  * The fill-reducing ordering and symbolic factorization are computed once and
  * kept across optimize() calls while the sparsity pattern is unchanged (g2o
- * calls init() at every optimize(); in MPC the pattern never changes).
+ * calls init() at every optimize(); in MPC the pattern never changes). The
+ * numeric factorization runs on a cached, pre-permuted copy of the matrix
+ * (setPrePermutedFactorization, default on; bit-identical results).
  *
  * Assumption for mode 1: an exactly-zero diagonal entry belongs to a dual
  * (multiplier) variable. A primal variable without any cost term (zero
@@ -65,8 +67,62 @@ template <typename MatrixType>
 class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
  public:
   using SparseMatrix = Eigen::SparseMatrix<double, Eigen::ColMajor, int>;
-  using Decomposition =
+  using DecompositionBase =
       Eigen::SimplicialLDLT<SparseMatrix, Eigen::Upper, Eigen::AMDOrdering<int>>;
+
+  /**
+   * SimplicialLDLT whose numeric factorization starts from a cached,
+   * already permuted copy of the matrix.
+   *
+   * Eigen's factorize() rebuilds P A P^T (a sparse symmetric permutation:
+   * pattern work, a column count and an allocation) at EVERY call although the
+   * sparsity pattern is fixed between calls. In the closed-loop NMPC profile of
+   * the px4 slalom this copy was 13 % of the linear solve (7.7 % of all
+   * instructions of a solve). Here the map "entry of P A P^T -> entry of A" is
+   * built once after analyzePattern() and the numbers are scattered through it;
+   * the factorization itself then runs on the permuted matrix directly
+   * (factorize_preordered). The result is bit-identical.
+   */
+  class Decomposition : public DecompositionBase {
+   public:
+    //! to be called after analyzePattern(A); A must keep its pattern afterwards
+    void buildPermutationMap(const SparseMatrix& A) {
+      _haveMap = false;
+      if (this->m_P.size() == 0) return;  // no ordering: stock path
+      SparseMatrix idx = A;
+      for (Eigen::Index k = 0; k < idx.nonZeros(); ++k)
+        idx.valuePtr()[k] = static_cast<double>(k + 1);
+      _permuted.resize(A.rows(), A.cols());
+      _permuted.template selfadjointView<Eigen::Upper>() =
+          idx.template selfadjointView<Eigen::Upper>().twistedBy(this->m_P);
+      _map.resize(_permuted.nonZeros());
+      for (Eigen::Index k = 0; k < _permuted.nonZeros(); ++k)
+        _map[k] = static_cast<int>(_permuted.valuePtr()[k]) - 1;
+      _haveMap = true;
+    }
+    //! numeric factorization of A, which has the pattern given to buildPermutationMap()
+    void factorizeFast(const SparseMatrix& A) {
+      if (!_haveMap || _permuted.nonZeros() != static_cast<Eigen::Index>(_map.size())) {
+        this->factorize(A);
+        return;
+      }
+      const double* v = A.valuePtr();
+      double* pv = _permuted.valuePtr();
+      const int* m = _map.data();
+      const Eigen::Index nz = _permuted.nonZeros();
+      for (Eigen::Index k = 0; k < nz; ++k) pv[k] = v[m[k]];
+#if EIGEN_VERSION_AT_LEAST(3, 4, 90)  // Eigen master: factorize_preordered<DoLDLT, NonHermitian>
+      this->template factorize_preordered<true, false>(_permuted);
+#else
+      this->template factorize_preordered<true>(_permuted);
+#endif
+    }
+
+   private:
+    SparseMatrix _permuted;
+    std::vector<int> _map;
+    bool _haveMap = false;
+  };
 
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   LinearSolverEigenQDLDLT() : g2o::LinearSolverCCS<MatrixType>() {}
@@ -95,14 +151,23 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
   //! factorization; costs at least one sparse product per solve). Default off.
   void setAlwaysRefine(bool always) { _alwaysRefine = always; }
   bool alwaysRefine() const { return _alwaysRefine; }
+  //! factorize on a cached pre-permuted copy of the matrix (default on, bit-identical
+  //! to Eigen's own factorize(), but skips rebuilding P A P^T at every call)
+  void setPrePermutedFactorization(bool on) { _prePermuted = on; }
+  bool prePermutedFactorization() const { return _prePermuted; }
   //! refinement steps taken in the last solve
   int lastRefinementSteps() const { return _lastRefinementSteps; }
   //! diagonal entries that received -delta in the last factorization
   int lastRegularizedCount() const { return _numRegularized; }
 
+  // g2o's GN/LM apply the update vector even when solve() fails, so a
+  // failed solve leaves x = 0 (no step) instead of stale values.
   bool solve(const g2o::SparseBlockMatrix<MatrixType>& A, double* x,
              double* b) override {
-    if (!factorize(A)) return false;
+    if (!factorize(A)) {
+      std::fill(x, x + A.rows(), 0.0);
+      return false;
+    }
     const double t = g2o::get_monotonic_time();
     Eigen::Map<Eigen::VectorXd> xx(x, _sparseMatrix.cols());
     Eigen::Map<const Eigen::VectorXd> bb(b, _sparseMatrix.cols());
@@ -111,6 +176,7 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
     if (_numRegularized > 0 || _alwaysRefine) refine(xx, bb);
     if (!xx.allFinite()) {
       G2O_ERROR("QDLDLT solve produced non-finite values");
+      xx.setZero();
       return false;
     }
     g2o::G2OBatchStatistics* globalStats =
@@ -126,8 +192,9 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
   bool _init = true;
   bool _analyzed = false;
   bool _alwaysRefine = false;
-  double _delta = 1e-7;
-  int _refinementSteps = 3;
+  bool _prePermuted = true;
+  double _delta = 1e-9;
+  int _refinementSteps = 5;
   double _refinementTol = 1e-12;
   int _lastRefinementSteps = 0;
   int _numRegularized = 0;
@@ -173,6 +240,7 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
       regularize();
       if (!samePattern()) {
         _ldlt.analyzePattern(_sparseMatrix);
+        _ldlt.buildPermutationMap(_sparseMatrix);
         storePattern();
       }
       _init = false;
@@ -183,7 +251,10 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
       regularize();
     }
     const double t = g2o::get_monotonic_time();
-    _ldlt.factorize(_sparseMatrix);
+    if (_prePermuted)
+      _ldlt.factorizeFast(_sparseMatrix);
+    else
+      _ldlt.factorize(_sparseMatrix);
     if (globalStats)
       globalStats->timeNumericDecomposition = g2o::get_monotonic_time() - t;
     if (_ldlt.info() != Eigen::Success) {

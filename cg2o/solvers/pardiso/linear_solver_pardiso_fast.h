@@ -74,8 +74,23 @@ class LinearSolverPardisoFast : public g2o::LinearSolverCCS<MatrixType> {
     return true;
   }
 
+  // g2o's GN/LM apply the update vector even when solve() fails, so a
+  // failed solve leaves x = 0 (no step) instead of stale values.
   bool solve(const g2o::SparseBlockMatrix<MatrixType>& A, double* x,
              double* b) override {
+    if (solveImpl(A, x, b)) return true;
+    std::fill(x, x + A.rows(), 0.0);
+    return false;
+  }
+
+  //! diagonal entries that received -delta in the last factorization
+  int lastRegularizedCount() const { return _numRegularized; }
+  //! number of pivots PARDISO had to perturb in the last factorization
+  int perturbedPivots() const { return static_cast<int>(_iparm[13]); }
+
+ protected:
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType>& A, double* x,
+                 double* b) {
     const double t0 = g2o::get_monotonic_time();
     fillMatrix(A);
     MKL_INT error = 0, nrhs = 1;
@@ -111,15 +126,14 @@ class LinearSolverPardisoFast : public g2o::LinearSolverCCS<MatrixType> {
     }
     if (_numRegularized > 0) refine(x, b);  // nothing to undo otherwise
     setStat(false, g2o::get_monotonic_time() - t1);
+    for (int i = 0; i < _n; ++i)
+      if (!std::isfinite(x[i])) {
+        G2O_ERROR("LinearSolverPardisoFast: solve produced non-finite values");
+        return false;
+      }
     return true;
   }
 
-  //! diagonal entries that received -delta in the last factorization
-  int lastRegularizedCount() const { return _numRegularized; }
-  //! number of pivots PARDISO had to perturb in the last factorization
-  int perturbedPivots() const { return static_cast<int>(_iparm[13]); }
-
- protected:
   Options _opt;
   bool _init = true, _analyzed = false;
   void* _pt[64];

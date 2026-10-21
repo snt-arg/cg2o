@@ -75,8 +75,12 @@ public:
                      double *b) override {
     using namespace g2o;
     double t;
-    if (!computeLDLT(A, t))
+    // g2o's GN/LM apply the update vector even when solve() fails, so a
+    // failed solve leaves x = 0 (no step) instead of stale values.
+    if (!computeLDLT(A, t)) {
+      std::fill(x, x + A.rows(), 0.0);
       return false;
+    }
 
     // Solving the linear system using LDLT decomposition
     VectorX::MapType xx(x, _sparseMatrix.cols());
@@ -85,6 +89,7 @@ public:
 
     if (_ldlt.info() != Eigen::Success) {
       G2O_ERROR("LDLT solve failed.");
+      xx.setZero();
       return false;
     }
 

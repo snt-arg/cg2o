@@ -1,5 +1,6 @@
 set(SOURCE_FILES 
   solver_eigen_pardiso_lu.cpp
+  solver_pardiso_fast.cpp
 )
 
 set(HEADER_FILES
