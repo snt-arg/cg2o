@@ -44,3 +44,4 @@ app/adaptive_cruise_control/cpp_code/results/accepted/solvers.xlsx
 /app/adaptive_cruise_control/lib/mpc_ampl/examples/.cache
 /app/adaptive_cruise_control/cpp_code/results/data
 /app/adaptive_cruise_control/cpp_code/results/accepted
+/install

@@ -42,7 +42,7 @@ option(CG2O_BUILD_EXAMPLES "Build the examples" OFF)
 option(USE_G2O_SOLVERS "Enable g2o-based solvers (links g2o + csparse and cholmod)" OFF)
 option(CG2O_BUILD_PARDISO "allow using the Paradiso solver" OFF)
 option(CG2O_BUILD_EIGEN_SOLVERS "allow building the Eigen solver" OFF)
-option(CG2O_DEBUG_LINEAR_SOLVER "Enable debug output for linear solvers" ON)
+option(CG2O_DEBUG_LINEAR_SOLVER "Enable debug output for linear solvers" OFF)
  
 
 
@@ -56,13 +56,7 @@ else()
 endif ()
 find_package(fmt REQUIRED)
 
-find_package(g2o REQUIRED)
-# Specify the path to g2o include directory and libraries
-set(G2O_LIBRARIES
-    g2o::core
-    g2o::stuff
-)
-
+include(cmake/FindOrBuildG2O.cmake)
 
 if(CG2O_BUILD_EXAMPLES)
     message(STATUS "Building with examples enabled")
