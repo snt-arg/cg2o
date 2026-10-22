@@ -327,7 +327,8 @@ void SparseOptimizerForConstraints<Derived>::setConvergenceCriterion(
     int criterion) {
   /*
   the termination criterion is based on the Newton decrement, the gradient norm,
-  or the update norm where GradientNorm =0
+  or the update norm; 0: UpdateNorm, 1: NewtonDecrement, 2: GradientNorm,
+  3: RelativeNewtonDecrement (|x^T b| < eps (1 + cost))
   */
   _terminationCriteria.setConvergenceCriterion(criterion);
 };
@@ -346,7 +347,12 @@ bool SparseOptimizerForConstraints<Derived>::verifyConvergence(double epsilon) {
   Eigen::Map<const Eigen::VectorXd> bVec(b, xSize);
   Eigen::Map<const Eigen::VectorXd> updateVec(update, xSize);
 
-  if (terminationCriteria().verifyConvergence(bVec, updateVec, epsilon)) {
+  // the objective value is only evaluated for the relative criterion
+  const double cost =
+      terminationCriteria().needsCost() ? this->activeChi2() : 0.0;
+
+  if (terminationCriteria().verifyConvergence(bVec, updateVec, epsilon,
+                                              cost)) {
     return true;
   }
   return false;

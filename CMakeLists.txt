@@ -63,6 +63,13 @@ set(G2O_LIBRARIES
     g2o::stuff
 )
 
+
+if(CG2O_BUILD_EXAMPLES)
+    message(STATUS "Building with examples enabled")
+    add_compile_definitions(CG2O_BUILD_EXAMPLES)
+endif(CG2O_BUILD_EXAMPLES)
+
+
 if(USE_G2O_SOLVERS)
     add_compile_definitions(USE_G2O_SOLVERS)
 
@@ -87,6 +94,13 @@ if (OPENMP_FOUND)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
     add_compile_definitions(G2O_USE_OPENMP)
 endif(OPENMP_FOUND)
+
+
+
+if(CG2O_BUILD_EXAMPLES)
+    message(STATUS "Building with examples enabled")
+    add_compile_definitions(CG2O_BUILD_EXAMPLES)
+endif(CG2O_BUILD_EXAMPLES)
 
 
 if(CG2O_DEBUG_LINEAR_SOLVER)
@@ -146,11 +160,6 @@ endif(CG2O_BUILD_PARDISO)
 include_directories(${G2O_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include)  
 link_directories(${G2O_LIBRARY_DIRS})
 
-
-if(CG2O_BUILD_EXAMPLES)
-    message(STATUS "Building with examples enabled")
-    add_compile_definitions(CG2O_BUILD_EXAMPLES)
-endif(CG2O_BUILD_EXAMPLES)
 
 
 # add the cg2o extenstion
