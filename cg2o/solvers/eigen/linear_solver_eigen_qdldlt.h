@@ -126,6 +126,12 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
 
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   LinearSolverEigenQDLDLT() : g2o::LinearSolverCCS<MatrixType>() {}
+  LinearSolverEigenQDLDLT(double delta, bool refine, int steps)
+      : g2o::LinearSolverCCS<MatrixType>(), _delta(delta),
+        _alwaysRefine(refine), _refinementSteps(steps) {}
+  LinearSolverEigenQDLDLT(double delta, bool refine)
+      : g2o::LinearSolverCCS<MatrixType>(), _delta(delta),
+        _alwaysRefine(refine) {} 
 
   bool init() override {
     _init = true;  // pattern is re-checked; symbolic kept if unchanged
