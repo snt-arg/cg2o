@@ -150,7 +150,7 @@ public:
                           2; // divide by 2 to account for equality constraints
                              // excluding the lagrange multiplier
       for (int i = 0; i < edgeDimension; ++i) {
-        if (std::abs(error[i]) > epsilon) {
+        if (!std::isfinite(error[i]) || std::abs(error[i]) > epsilon) {
           return false; // If any error exceeds epsilon, return false
         }
       }
@@ -169,7 +169,7 @@ public:
       const double *error = edge->errorData();
       int edgeDimension = edge->dimension();
       for (int i = 0; i < edgeDimension; ++i) {
-        if (std::max(0.0, error[i]) > epsilon) {
+        if (!std::isfinite(error[i]) || std::max(0.0, error[i]) > epsilon) {
           return false; // If any error exceeds epsilon, return false
         }
       }

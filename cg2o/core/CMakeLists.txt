@@ -14,6 +14,8 @@ set(header
   sparse_optimizer_for_constraints.hpp
   termination_criteria.h
   vertex_lagrange_multiplier.h
+  warm_start_math.h
+  vertex_state_guard.h
 )
 
 # Define the library

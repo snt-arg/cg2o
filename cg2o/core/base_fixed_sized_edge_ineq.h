@@ -57,6 +57,48 @@ public:
       size_t start = 0); // in AL method we use the information matrix to save
                          // the constraint violation
 
+  // ---- warm start (used by SparseOptimizerISPD) ----
+  // The optimizer keeps one stored copy of (lambda, slack, g(x)) per edge:
+  // the iterate it selected as warm-start point (final or middle iterate of
+  // the previous solve). `stamp` identifies the solve that stored it, so an
+  // edge that was not active in that solve is recognised and initialised
+  // cold. storeAuxiliary() expects computeError() to be current.
+  void storeAuxiliary(long stamp) {
+    _lagrangeMultiplierStored = _lagrangeMultiplier;
+    _slackVariableStored = _slackVariable;
+    _ineqStored = this->_error;
+    _auxiliaryStamp = stamp;
+  }
+  //! copies the stored point back; false (nothing changed) if it is not
+  //! from solve `stamp`
+  bool restoreAuxiliary(long stamp) {
+    if (_auxiliaryStamp != stamp)
+      return false;
+    _lagrangeMultiplier = _lagrangeMultiplierStored;
+    _slackVariable = _slackVariableStored;
+    _ineqWarm = _ineqStored;
+    return true;
+  }
+  long auxiliaryStamp() const { return _auxiliaryStamp; }
+  //! true while (lambda, slack) hold warm values for the coming solve
+  bool auxiliaryWarm() const { return _auxiliaryWarm; }
+  void setAuxiliaryWarm(bool warm) { _auxiliaryWarm = warm; }
+  //! g(x) of the restored warm point (shifted with lambda and slack); the
+  //! optimizer compares it with g at the start of the new solve
+  Eigen::Matrix<double, D, 1> &warmIneq() { return _ineqWarm; }
+  // Separate rollback state: selecting a middle point must not overwrite it.
+  void storeStartingAuxiliary(long stamp) {
+    _startMultiplier = _lagrangeMultiplier;
+    _startSlack = _slackVariable;
+    _startStamp = stamp;
+  }
+  bool restoreStartingAuxiliary(long stamp) {
+    if (_startStamp != stamp) return false;
+    _lagrangeMultiplier = _startMultiplier;
+    _slackVariable = _startSlack;
+    return true;
+  }
+
 protected:
   void setInformation(const InformationType &information);
   // Member to store the function pointer (or lambda)
@@ -76,6 +118,16 @@ protected:
 
   // In case Rho is used
   Eigen::Matrix<double, D, 1> _rho;
+
+  // warm-start storage (see storeAuxiliary)
+  Eigen::Matrix<double, D, 1> _lagrangeMultiplierStored;
+  Eigen::Matrix<double, D, 1> _slackVariableStored;
+  Eigen::Matrix<double, D, 1> _ineqStored;
+  Eigen::Matrix<double, D, 1> _ineqWarm;
+  long _auxiliaryStamp = -1;
+  bool _auxiliaryWarm = false;
+  Eigen::Matrix<double, D, 1> _startMultiplier, _startSlack;
+  long _startStamp = -1;
 };
 
 // Forward declare the customQuadraticForm function template

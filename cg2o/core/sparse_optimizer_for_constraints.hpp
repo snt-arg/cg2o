@@ -86,6 +86,11 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
   _activeVertices.clear();
   _activeVertices.reserve(vset.size());
   _activeEdges.clear();
+  // the constraint lists are rebuilt below; without clearing them a second
+  // initializeOptimization() call listed every constraint edge twice, and
+  // ISPD then updated its multiplier and slack twice per iteration
+  _activeEdgesIneq.clear();
+  _activeEdgesEq.clear();
   set<Edge *> auxEdgeSet; // temporary structure to avoid duplicates
   for (HyperGraph::VertexSet::iterator it = vset.begin(); it != vset.end();
        ++it) {
@@ -248,6 +253,8 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
   _activeEdges.clear();
   _activeEdges.reserve(eset.size());
   //-----------------------------------------
+  _activeEdgesIneq.clear();
+  _activeEdgesEq.clear();
   _activeEdgesIneq.reserve(_edgeIneqSet.size());
   //-----------------------------------------
   set<Vertex *> auxVertexSet; // temporary structure to avoid duplicates
@@ -270,6 +277,9 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
       // Element found, add it to _activeEdgesIneq
       _activeEdgesIneq.push_back(static_cast<OptimizableGraph::Edge *>(
           *it)); // Dereference the iterator to get the element
+    if (_edgeEqSet.find(static_cast<OptimizableGraph::Edge *>(*it)) !=
+        _edgeEqSet.end())
+      _activeEdgesEq.push_back(static_cast<OptimizableGraph::Edge *>(*it));
 
     //-----------------------------------------
   }
