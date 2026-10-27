@@ -3,11 +3,13 @@ Contributed to cg2o; distributed under the same BSD 3-Clause license as the
 rest of the library (see the header of linear_solver_eigen_ldlt.h).
 */
 
+ 
 #ifndef CG2O_LINEAR_SOLVER_EIGEN_QDLDLT_H
 #define CG2O_LINEAR_SOLVER_EIGEN_QDLDLT_H
 
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
+#include <Eigen/SparseLU>
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -62,6 +64,18 @@ namespace cg2o {
  * diagonal) would also receive -delta; give it a small prior instead.
  * No pivoting is done: for indefinite matrices that are not quasi-definite
  * use LinearSolverPardisoFast (Bunch-Kaufman) or LinearSolverUmfpackFast.
+ *
+ * Accuracy control (per solve, one residual computation serves refinement and check). Because there is no pivoting and the
+ * regularization perturbs the matrix, a solve can be INEXACT when the system is badly conditioned (huge barrier entries,
+ * nearly dependent constraints): refinement then stalls and the returned step does not solve K x = b (measured on the MACC
+ * ISPD problem: relative residuals 1e-5 .. 1e+2 in about 0.5 % of the solves, which made the interior-point iteration run to
+ * its iteration limit). The solve therefore is:
+ *     x = LDL^T solve;  r = b - K x            (K = the UNREGULARIZED matrix)
+ *     while |r| > refinementTolerance*|b| and refinement is still contracting (<= refinementSteps corrections):
+ *         x += LDL^T solve(r);  r = b - K x     (existing factors, no new factorization)
+ *     if |r| > fallbackTolerance*|b|:          (default 1e-8; 0 disables the fallback)
+ *         x_lu = pivoted sparse LU solve of K;   keep x_lu if its residual is smaller, count it as inaccurate if still > tol
+ * A solve that is already accurate costs one residual (a sparse matrix-vector product) and no correction.
  */
 template <typename MatrixType>
 class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
@@ -163,6 +177,13 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
   bool prePermutedFactorization() const { return _prePermuted; }
   //! refinement steps taken in the last solve
   int lastRefinementSteps() const { return _lastRefinementSteps; }
+  //! relative residual |b - K x|_inf / |b|_inf above which a solve is repeated with a pivoted sparse LU (0 = never)
+  void setFallbackTolerance(double tol) { _fallbackTol = tol; }
+  double fallbackTolerance() const { return _fallbackTol; }
+  //! total solves, solves repeated with LU, and solves that stayed above fallbackTolerance() even after the LU
+  long solveCount() const { return _solveCount; }
+  long fallbackCount() const { return _fallbackCount; }
+  long inaccurateCount() const { return _inaccurateCount; }
   //! diagonal entries that received -delta in the last factorization
   int lastRegularizedCount() const { return _numRegularized; }
 
@@ -179,7 +200,8 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
     Eigen::Map<const Eigen::VectorXd> bb(b, _sparseMatrix.cols());
     xx = _ldlt.solve(bb);
     _lastRefinementSteps = 0;
-    if (_numRegularized > 0 || _alwaysRefine) refine(xx, bb);
+    ++_solveCount;
+    if (_fallbackTol > 0.0 || _numRegularized > 0 || _alwaysRefine) refineAndCheck(xx, bb);
     if (!xx.allFinite()) {
       G2O_ERROR("QDLDLT solve produced non-finite values");
       xx.setZero();
@@ -204,6 +226,13 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
   double _refinementTol = 1e-12;
   int _lastRefinementSteps = 0;
   int _numRegularized = 0;
+  double _fallbackTol = 1e-8;
+  long _fallbackCount = 0;
+  long _inaccurateCount = 0;
+  long _solveCount = 0;
+  bool _luAnalyzed = false;
+  Eigen::SparseLU<SparseMatrix, Eigen::COLAMDOrdering<int>> _lu;
+  SparseMatrix _fullMatrix;
   SparseMatrix _sparseMatrix;  // upper triangle, as filled by g2o
   Decomposition _ldlt;
   std::vector<int> _diagIndex;      // position of each diagonal entry
@@ -211,23 +240,58 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
   Eigen::VectorXd _residual;
   std::vector<int> _patternOuter, _patternInner;
 
-  // adaptive iterative refinement against the unregularized matrix
-  void refine(Eigen::Map<Eigen::VectorXd>& xx,
-              const Eigen::Map<const Eigen::VectorXd>& bb) {
-    const double normB = bb.cwiseAbs().maxCoeff();
-    double prev = std::numeric_limits<double>::infinity();
-    for (int k = 0; k < _refinementSteps; ++k) {
-      // K x = (K_reg - R) x, R = diag(-delta on regularized entries)
-      _residual = bb - (_sparseMatrix.selfadjointView<Eigen::Upper>() * xx -
-                        _regularization.cwiseProduct(xx));
-      const double rn = _residual.cwiseAbs().maxCoeff();
-      // relative to |b| on purpose: a normwise backward error |K||x| would
-      // hide the delta bias when K has huge barrier entries
-      if (rn <= _refinementTol * normB) break;
-      if (rn > 0.5 * prev) break;  // stalled: rounding level reached
-      prev = rn;
-      xx += _ldlt.solve(_residual);
+  //! |b - K x|_inf for the UNREGULARIZED K = K_reg - R (also stored in _residual)
+  double residualNorm(const Eigen::Map<Eigen::VectorXd>& xx,
+                      const Eigen::Map<const Eigen::VectorXd>& bb) {
+    _residual = bb - (_sparseMatrix.template selfadjointView<Eigen::Upper>() * xx -
+                      _regularization.cwiseProduct(xx));
+    return _residual.cwiseAbs().maxCoeff();
+  }
+
+  //! x = pivoted sparse LU solve of the unregularized, full symmetric K (false, x untouched, if the LU fails)
+  bool solveWithLU(Eigen::Map<Eigen::VectorXd>& xx,
+                   const Eigen::Map<const Eigen::VectorXd>& bb) {
+    _fullMatrix = _sparseMatrix.template selfadjointView<Eigen::Upper>();
+    for (int c = 0; c < static_cast<int>(_diagIndex.size()); ++c)
+      if (_regularization[c] != 0.0) _fullMatrix.coeffRef(c, c) -= _regularization[c];
+    if (!_luAnalyzed) {
+      _lu.analyzePattern(_fullMatrix);
+      _luAnalyzed = true;
+    }
+    _lu.factorize(_fullMatrix);
+    if (_lu.info() != Eigen::Success) return false;
+    const Eigen::VectorXd y = _lu.solve(bb);
+    if (!y.allFinite()) return false;
+    xx = y;
+    return true;
+  }
+
+  //! iterative refinement against the unregularized matrix, then the accuracy check / LU fallback (one residual each step)
+  void refineAndCheck(Eigen::Map<Eigen::VectorXd>& xx,
+                      const Eigen::Map<const Eigen::VectorXd>& bb) {
+    const double nb = bb.cwiseAbs().maxCoeff();
+    double rn = xx.allFinite() ? residualNorm(xx, bb)
+                               : std::numeric_limits<double>::infinity();
+    for (int k = 0; k < _refinementSteps && std::isfinite(rn) && rn > _refinementTol * nb; ++k) {
+      const double before = rn;
+      xx += _ldlt.solve(_residual);  // existing factors, no new factorization
       ++_lastRefinementSteps;
+      rn = residualNorm(xx, bb);
+      // relative to |b| on purpose: a normwise backward error |K||x| would hide the delta bias when K has huge barrier entries
+      if (!(rn <= 0.5 * before)) break;  // stalled: rounding level reached, or the regularization bias is not contracting
+    }
+    if (_fallbackTol > 0.0 && !(rn <= _fallbackTol * nb)) {
+      const Eigen::VectorXd keep = xx;
+      if (solveWithLU(xx, bb)) {
+        const double rl = residualNorm(xx, bb);
+        if (!std::isfinite(rn) || rl <= rn) {
+          ++_fallbackCount;
+          rn = rl;
+        } else {
+          xx = keep;  // the LU did not help: keep the LDL^T answer
+        }
+      }
+      if (!(rn <= _fallbackTol * nb)) ++_inaccurateCount;
     }
   }
 
@@ -248,6 +312,7 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
         _ldlt.analyzePattern(_sparseMatrix);
         _ldlt.buildPermutationMap(_sparseMatrix);
         storePattern();
+        _luAnalyzed = false;  // the LU fallback must analyze the new pattern
       }
       _init = false;
       if (globalStats)
