@@ -118,7 +118,6 @@ public:
   template <int D, typename E, typename... VertexTypes>
   void constructQuadraticFormIneq(
       BaseFixedSizedEdgeIneq<D, E, VertexTypes...> &edge);
-       
 
   template <int D, typename E, typename... VertexTypes>
   bool addEdgeIneqImpl(BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *e);
@@ -139,7 +138,6 @@ public:
   virtual void update(const double *update) override;
 
   virtual int optimize(int iterations, bool online = false) override;
-  
 
   virtual double backtrackingAlgorithm(const double *update) override;
   /**
@@ -149,7 +147,7 @@ public:
   @returns the the scaling factor for a successful step size
   */
 
- void resetLagrangeMultiplierEq() override;
+  void resetLagrangeMultiplierEq() override;
 
   // solver parameter
 
@@ -166,13 +164,11 @@ public:
   double kappaFinal() const;
   double kappaUpdateFactor() const;
 
-
 protected:
-  std::unordered_map<void *, std::function<void()>>
-      updateMultipliersIneqFunctionMap;
   // solver parameter
 public:
-  double _kappa; // Default value for the barrier function parameter _kappa
+  double _kappa =
+      1.0; // current barrier parameter, also defined before optimize()
   double _kappa_initial =
       1; // Default value for the barrier function parameter _kappa0
   double _kappa_update_factor =
@@ -181,12 +177,14 @@ public:
   double _kappa_final =
       1500; // Maximum value for the barrier function parameter
   bool _reset_lagrange_multipliers = false;
+  bool _barrier_step_failed = false;
+  bool strictlyInterior();
 };
 
 template <int D, typename E, typename... VertexTypes>
 bool SparseOptimizerBIPM::addEdgeIneqImpl(
     BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *e) {
-  bool eresult = OptimizableGraph::addEdge(e);
+  bool eresult = this->attachConstraintEdge(e);
   if (!eresult) {
     std::cerr << "[Error] adding Ineq edge to the optimizer" << std::endl;
     return false;
@@ -208,23 +206,9 @@ bool SparseOptimizerBIPM::addEdgeIneqImpl(
 template <int D, typename E, typename... VertexTypes>
 bool SparseOptimizerBIPM::addEdgeEqImpl(
     BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e) {
-  // create new vertex for the lagrangian
-  auto *vLagrangian = new VertexLagrangeMultiplier<D>();
-  // auto* nu = new VertexLagrangeMultiplier<D>();
-  vLagrangian->setId(e->getVertexLagrangeMultiplierId());
-  vLagrangian->setInitialValue(_lagrange_multiplier_initial_eq);
-
-  // Add the Nu vertex to the optimizer
-  this->addVertex(vLagrangian);
-
-  // assign the vertex to the edge
-  e->setVertex(e->vertices().size() - 1, vLagrangian);
-
-  bool eresult = OptimizableGraph::addEdge(e);
-  if (!eresult) {
-    std::cerr << "[Error] adding Eq edge to the optimizer" << std::endl;
+  auto *vLagrangian = this->attachEqualityEdge(e);
+  if (!vLagrangian)
     return false;
-  }
 
   vLagrangian->setFixed(false);
   e->initializeInformationMatrix();

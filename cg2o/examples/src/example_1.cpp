@@ -47,12 +47,14 @@ OP:
 #include <g2o/core/optimization_algorithm_dogleg.h>
 #include <g2o/core/optimization_algorithm_gauss_newton.h>
 #include <g2o/core/optimization_algorithm_levenberg.h>
-#include <g2o/solvers/cholmod/linear_solver_cholmod.h>
 
 #include <Eigen/Core>
 #include <iostream>
 
+#include "cg2o/solvers/eigen/linear_solver_eigen_qdldlt.h"
+#ifdef CG2O_HAVE_UMFPACK
 #include "cg2o/solvers/umfpack/linear_solver_eigen_umfpack_lu.h" // the default solver in cg2o
+#endif
 
 #ifdef CG2O_BUILD_PARDISO
 #include "cg2o/solvers/pardiso/linear_solver_eigen_pardiso_lu.h"
@@ -86,7 +88,6 @@ OP:
 #endif
 
 #include "example_1_vertices_edges.h" // for defining the edges
-#include <g2o/solvers/cholmod/linear_solver_cholmod.h>
 
 int main(int argc, char **argv) {
   std::cout << "OP: min ||xy(1)-a||^2 +  ||xy(2)-b||^2 + ||z-c||^2 s.t.    "
@@ -207,8 +208,14 @@ int main(int argc, char **argv) {
   switch (linearSolverType) {
   case 0:
     std::cout << "Linear solver:        [0]     (EigenUmfPackLU)" << std::endl;
+#ifdef CG2O_HAVE_UMFPACK
     linearSolver = std::make_unique<
         cg2o::LinearSolverEigenUmfPackLU<g2o::BlockSolverX::PoseMatrixType>>();
+#else
+    linearSolver = std::make_unique<
+        cg2o::LinearSolverEigenQDLDLT<g2o::BlockSolverX::PoseMatrixType>>();
+    std::cout << "UMFPACK not built; using EigenQDLDLT" << std::endl;
+#endif
     break;
 #ifdef CG2O_BUILD_PARDISO
   case 1:

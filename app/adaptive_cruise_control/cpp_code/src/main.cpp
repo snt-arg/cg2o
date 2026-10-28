@@ -119,8 +119,8 @@ int main(int argc, char **argv) {
   std::string AlgEqType = "al"; // Change to string, default "al"
   std::string AlIneqType = "AL";
   auto optimizer = std::make_shared<cg2o::SparseOptimizerAL>();
-  auto mpc = std::main ampl coloum do you know how data is saved
-      ke_shared<cg2o::mpc::MPCFormulation<cg2o::SparseOptimizerAL>>(
+  auto mpc =
+      std::make_shared<cg2o::mpc::MPCFormulation<cg2o::SparseOptimizerAL>>(
           mpcHorizon, optimizer, param);
 
 #endif

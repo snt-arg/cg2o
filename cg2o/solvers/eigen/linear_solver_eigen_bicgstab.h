@@ -40,6 +40,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include "g2o/stuff/logger.h"
 #include "g2o/stuff/timeutil.h"
 
+#include <algorithm>
+
 namespace cg2o {
 
 /**
@@ -66,6 +68,17 @@ public:
 
   virtual bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
                      double *b) override {
+    if (A.rows() == 0)
+      return true;
+    if (A.rows() == A.cols() && solveImpl(A, x, b))
+      return true;
+    std::fill(x, x + A.cols(), 0.0);
+    return false;
+  }
+
+protected:
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+                 double *b) {
     using namespace g2o;
 
     double t;
@@ -77,7 +90,7 @@ public:
     VectorX::ConstMapType bb(b, _sparseMatrix.cols());
     xx = _bicgstab.solve(bb);
 
-    if (_bicgstab.info() != Eigen::Success) {
+    if (_bicgstab.info() != Eigen::Success || !xx.allFinite()) {
       G2O_ERROR("BiCGSTAB solve failed.");
       return false;
     }
@@ -135,10 +148,9 @@ protected:
       const g2o::SparseBlockMatrix<MatrixType> &A,
       std::function<void(g2o::MarginalCovarianceCholesky &)> /*compute*/)
       override {
-    double t;
-    if (!computeBiCGSTAB(A, t))
-      return false;
-    return true;
+    (void)A;
+    // No covariance factor/callback is supplied by this backend.
+    return false;
   }
 };
 

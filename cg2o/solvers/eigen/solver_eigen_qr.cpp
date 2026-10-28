@@ -27,7 +27,6 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
-
 #include "g2o/core/block_solver.h"
 #include "g2o/core/optimization_algorithm_dogleg.h"
 #include "g2o/core/optimization_algorithm_factory.h"
@@ -37,23 +36,24 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include "g2o/stuff/logger.h"
 #include "linear_solver_eigen_qr.h"
 
-
 using namespace std;
 namespace cg2o {
 
 namespace {
 template <int p, int l, bool blockorder>
- std::unique_ptr<g2o::BlockSolverBase> AllocateSolverSparseQR() {
-  G2O_DEBUG("Using EigenQR poseDim {} landMarkDim {} blockordering {}", p, l, blockorder);
+std::unique_ptr<g2o::BlockSolverBase> AllocateSolverSparseQR() {
+  G2O_DEBUG("Using EigenQR poseDim {} landMarkDim {} blockordering {}", p, l,
+            blockorder);
   auto linearSolver = std::make_unique<
       LinearSolverEigenQR<typename g2o::BlockSolverPL<p, l>::PoseMatrixType>>();
   return std::make_unique<g2o::BlockSolverPL<p, l>>(std::move(linearSolver));
 }
-}  // namespace
+} // namespace
 
-static g2o::OptimizationAlgorithm* createSolverSparseQR(const std::string& fullSolverName) {
+static g2o::OptimizationAlgorithm *
+createSolverSparseQR(const std::string &fullSolverName) {
   static const std::map<std::string,
-                        std::function< std::unique_ptr<g2o::BlockSolverBase>()>>
+                        std::function<std::unique_ptr<g2o::BlockSolverBase>()>>
       solver_factories{
           {"var", &AllocateSolverSparseQR<-1, -1, true>},
           {"fix3_2", &AllocateSolverSparseQR<3, 2, true>},
@@ -66,7 +66,8 @@ static g2o::OptimizationAlgorithm* createSolverSparseQR(const std::string& fullS
   using namespace g2o;
   string solverName = fullSolverName.substr(3);
   auto solverf = solver_factories.find(solverName);
-  if (solverf == solver_factories.end()) return nullptr;
+  if (solverf == solver_factories.end())
+    return nullptr;
 
   string methodName = fullSolverName.substr(0, 2);
 
@@ -81,11 +82,13 @@ static g2o::OptimizationAlgorithm* createSolverSparseQR(const std::string& fullS
   return nullptr;
 }
 
-class EigenSparseQR_SolverCreator : public g2o::AbstractOptimizationAlgorithmCreator {
- public:
-  explicit EigenSparseQR_SolverCreator(const g2o::OptimizationAlgorithmProperty& p)
+class EigenSparseQR_SolverCreator
+    : public g2o::AbstractOptimizationAlgorithmCreator {
+public:
+  explicit EigenSparseQR_SolverCreator(
+      const g2o::OptimizationAlgorithmProperty &p)
       : AbstractOptimizationAlgorithmCreator(p) {}
-  virtual g2o::OptimizationAlgorithm* construct() {
+  virtual g2o::OptimizationAlgorithm *construct() {
     return createSolverSparseQR(property().name);
   }
 };
@@ -93,10 +96,17 @@ class EigenSparseQR_SolverCreator : public g2o::AbstractOptimizationAlgorithmCre
 G2O_REGISTER_OPTIMIZATION_LIBRARY(eigen_sparse_qr);
 
 // Register solvers (similar to the dense ones)
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(gn_var_sparse_qr, new EigenSparseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("gn_var_sparse_qr", "Gauss-Newton: Sparse QR solver (variable blocksize)", "Eigen", false, Eigen::Dynamic, Eigen::Dynamic)));
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(lm_var_sparse_qr, new EigenSparseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("lm_var_sparse_qr", "Levenberg: Sparse QR solver (variable blocksize)", "Eigen", false, Eigen::Dynamic, Eigen::Dynamic)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    gn_var_sparse_qr,
+    new EigenSparseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "gn_var_sparse_qr",
+        "Gauss-Newton: Sparse QR solver (variable blocksize)", "Eigen", false,
+        Eigen::Dynamic, Eigen::Dynamic)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    lm_var_sparse_qr,
+    new EigenSparseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "lm_var_sparse_qr", "Levenberg: Sparse QR solver (variable blocksize)",
+        "Eigen", false, Eigen::Dynamic, Eigen::Dynamic)));
 // Add other registrations as needed
 
-}  // namespace cg2o
+} // namespace cg2o

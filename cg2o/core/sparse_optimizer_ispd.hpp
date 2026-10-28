@@ -33,17 +33,17 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include "sparse_optimizer_for_constraints.h"
 #include "sparse_optimizer_ispd.h"
 #include "vertex_lagrange_multiplier.h"
-#include "warm_start_math.h"
 #include "vertex_state_guard.h"
+#include "warm_start_math.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
+#include <optimizable_graph.h>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
-#include <optimizable_graph.h>
 #include <vector>
 
 namespace cg2o {
@@ -72,11 +72,10 @@ void SparseOptimizerISPD::constructQuadraticFormIneq(
                                 std::make_index_sequence<_nr_of_vertices>());
 }
 
-
 template <int D, typename E, typename... VertexTypes>
 bool SparseOptimizerISPD::addEdgeIneqImpl(
     BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *e) {
-  bool eresult = OptimizableGraph::addEdge(e);
+  bool eresult = this->attachConstraintEdge(e);
   if (!eresult) {
     std::cerr << "[Error] adding Ineq edge to the optimizer" << std::endl;
     return false;
@@ -164,12 +163,19 @@ void SparseOptimizerISPD::edgeProcessing(EdgeType *edge, int controller) {
     return;
   }
 
-  case 10: { edge->storeStartingAuxiliary(_solve_counter); return; }
-  case 11: { edge->restoreStartingAuxiliary(_solve_counter); return; }
+  case 10: {
+    edge->storeStartingAuxiliary(_solve_counter);
+    return;
+  }
+  case 11: {
+    edge->restoreStartingAuxiliary(_solve_counter);
+    return;
+  }
   case 15: { // always checked, independently of optional push / centering
     for (int i = 0; i < D; ++i)
-      _aux_valid = _aux_valid && warm_start::validPair(
-          edge->slackVariable()(i), edge->lagrangeMultiplier()(i), _kappa);
+      _aux_valid = _aux_valid &&
+                   warm_start::validPair(edge->slackVariable()(i),
+                                         edge->lagrangeMultiplier()(i), _kappa);
     return;
   }
 
@@ -183,7 +189,7 @@ void SparseOptimizerISPD::edgeProcessing(EdgeType *edge, int controller) {
       if (!warm_start::validPair(slack(i), multiplier(i), _kappa)) {
         // Infeasible-start repair: do not confuse s>0 with g(x)<0.
         slack(i) = std::max(-edge->errorData()[i],
-                           std::max(ps, _slack_variable_initial_ineq));
+                            std::max(ps, _slack_variable_initial_ineq));
         multiplier(i) = std::max(pl, _lagrange_multiplier_initial_ineq);
         ++_last_reset_rows;
       }
@@ -201,9 +207,9 @@ void SparseOptimizerISPD::edgeProcessing(EdgeType *edge, int controller) {
       auto &multiplier = edge->lagrangeMultiplier();
       const double mu = 1.0 / _kappa;
       for (int i = 0; i < D; ++i) {
-        if (!warm_start::centerPair(slack(i), multiplier(i), mu,
-                _warm_start_center_lo, _warm_start_center_hi,
-                _warm_start_center_mode,
+        if (!warm_start::centerPair(
+                slack(i), multiplier(i), mu, _warm_start_center_lo,
+                _warm_start_center_hi, _warm_start_center_mode,
                 std::max(_warm_start_push, _warm_start_slack_push),
                 std::max(_warm_start_push, _warm_start_multiplier_push)))
           _aux_valid = false;
@@ -258,8 +264,9 @@ void SparseOptimizerISPD::edgeProcessing(EdgeType *edge, int controller) {
       // intermediate iterate that were still far from feasible
       const double ref = (_warm_start_reset_test == 0) ? gOld(i) : -slack(i);
       const double scale = _warm_start_reset_test == 2
-          ? std::max({std::numeric_limits<double>::min(), std::abs(g), std::abs(slack(i))})
-          : std::max({1.0, std::abs(ref), slack(i)});
+                               ? std::max({std::numeric_limits<double>::min(),
+                                           std::abs(g), std::abs(slack(i))})
+                               : std::max({1.0, std::abs(ref), slack(i)});
       if (!(std::abs(g - ref) <= _warm_start_reset_tolerance * scale) ||
           !warm_start::validPair(slack(i), multiplier(i), _kappa)) {
         if (_warm_start_reset_mode == 0) { // centred at mu
@@ -517,9 +524,6 @@ void SparseOptimizerISPD::initializeSlackVariable(
   e->setSlackVariable(slack_variable);
 };
 
-
-
-
 template <int D, typename E, typename... VertexTypes>
 void SparseOptimizerISPD::initializeAuxiliaryVariables(
     BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *edge) {
@@ -547,8 +551,7 @@ void SparseOptimizerISPD::initializeAuxiliaryVariables(
 namespace internal {
 template <typename T> struct always_false : std::false_type {};
 // C++17 detection of the constraint edge kinds (no concepts needed)
-template <typename T, typename = void>
-struct is_ineq_edge : std::false_type {};
+template <typename T, typename = void> struct is_ineq_edge : std::false_type {};
 template <typename T>
 struct is_ineq_edge<
     T, std::void_t<decltype(std::declval<T &>().slackVariable()),
@@ -559,14 +562,14 @@ struct is_ineq_edge<
 template <typename T, typename = void> struct is_eq_edge : std::false_type {};
 template <typename T>
 struct is_eq_edge<
-    T, std::void_t<decltype(std::declval<T &>().getVertexLagrangeMultiplierId()),
-                   decltype(std::declval<T &>().setLagrangeMultiplier(
-                       std::declval<T &>().lagrangeMultiplier()))>>
+    T,
+    std::void_t<decltype(std::declval<T &>().getVertexLagrangeMultiplierId()),
+                decltype(std::declval<T &>().setLagrangeMultiplier(
+                    std::declval<T &>().lagrangeMultiplier()))>>
     : std::true_type {};
 } // namespace internal
 
-template <typename T>
-void SparseOptimizerISPD::registerWarmStartVertex(T* v) {
+template <typename T> void SparseOptimizerISPD::registerWarmStartVertex(T *v) {
   if (!v || vertex(v->id()) != v)
     throw std::invalid_argument("warm-start vertex is not in this graph");
   _snapshot_factories[v] = [v]() {
@@ -593,13 +596,14 @@ void SparseOptimizerISPD::addWarmStartShiftSequence(
     if (_shift_members.count(p))
       throw std::invalid_argument("warm-start shift sequences overlap");
   }
-  std::unordered_set<T*> unique(stages.begin(), stages.end());
+  std::unordered_set<T *> unique(stages.begin(), stages.end());
   if (unique.size() != stages.size())
     throw std::invalid_argument("duplicate entry in warm-start shift sequence");
-  for (auto* p : stages) {
+  for (auto *p : stages) {
     if constexpr (std::is_base_of_v<g2o::OptimizableGraph::Vertex, T>) {
       if (vertex(p->id()) != p || p->dimension() != stages.front()->dimension())
-        throw std::invalid_argument("shift vertices must belong to this graph and have equal dimensions");
+        throw std::invalid_argument("shift vertices must belong to this graph "
+                                    "and have equal dimensions");
     } else {
       if (!edges().count(p))
         throw std::invalid_argument("shift edge is not in this graph");
@@ -613,7 +617,8 @@ void SparseOptimizerISPD::addWarmStartShiftSequence(
     return std::min(k + n, size - 1);
   };
   if constexpr (std::is_base_of_v<g2o::OptimizableGraph::Vertex, T>) {
-    for (auto* v : stages) registerWarmStartVertex(v);
+    for (auto *v : stages)
+      registerWarmStartVertex(v);
     // primal vertices: x_k <- x_{k+n}, fixed vertices are left untouched
     _shift_functions.push_back([stages, source](bool primal, int n) {
       if (!primal) {
@@ -655,23 +660,9 @@ void SparseOptimizerISPD::addWarmStartShiftSequence(
 template <int D, typename E, typename... VertexTypes>
 bool SparseOptimizerISPD::addEdgeEqImpl(
     BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e) {
-  // create new vertex for the lagrangian
-  auto *vLagrangian = new VertexLagrangeMultiplier<D>();
-  // auto* nu = new VertexLagrangeMultiplier<D>();
-  vLagrangian->setId(e->getVertexLagrangeMultiplierId());
-  vLagrangian->setInitialValue(_lagrange_multiplier_initial_eq);
-
-  // Add the Nu vertex to the optimizer
-  this->addVertex(vLagrangian);
-
-  // assign the vertex to the edge
-  e->setVertex(e->vertices().size() - 1, vLagrangian);
-
-  bool eresult = OptimizableGraph::addEdge(e);
-  if (!eresult) {
-    std::cerr << "[Error] adding Eq edge to the optimizer" << std::endl;
+  auto *vLagrangian = this->attachEqualityEdge(e);
+  if (!vLagrangian)
     return false;
-  }
 
   vLagrangian->setFixed(false);
   e->initializeInformationMatrix();
@@ -683,7 +674,6 @@ bool SparseOptimizerISPD::addEdgeEqImpl(
 
   return true;
 }
-
 
 } // namespace cg2o
 

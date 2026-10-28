@@ -90,7 +90,7 @@ protected:
 
   VoidEdgeFuncType _constructQuadraticFormImpl = nullptr;
   double _dualRegularization = -1.0; // < 0: use the optimizer's default
-  bool _standardOmega = false; // true while _information == [[0,I],[I,0]]
+  bool _standardOmega = false;       // true while _information == [[0,I],[I,0]]
   bool _closedForm = true;
 
 private:
@@ -98,7 +98,6 @@ private:
   void assemblePrimal(const Eigen::Matrix<double, D, 1> &nu);
 
 protected:
-
   // In case Rho is used
   Eigen::Matrix<double, D, 1> _rho;
 };
@@ -219,7 +218,8 @@ void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::constructQuadraticForm() {
   if (_constructQuadraticFormImpl) {
     _constructQuadraticFormImpl(
         *this); // Call the assigned function (or lambda)
-  } else if (_dualRegularization >= 0.0) {  // explicit sigma, 0 = exact KKT (closed form)
+  } else if (_dualRegularization >=
+             0.0) { // explicit sigma, 0 = exact KKT (closed form)
     constructQuadraticFormRegularized(_dualRegularization);
   } else {
     // If no function is assigned, call the base class implementation (if
@@ -231,8 +231,8 @@ void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::constructQuadraticForm() {
 }
 
 template <int D, typename E, typename... VertexTypes>
-void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::
-    constructQuadraticFormRegularized(double sigma) {
+void BaseFixedSizedEdgeEq<
+    D, E, VertexTypes...>::constructQuadraticFormRegularized(double sigma) {
   if (_standardOmega && _closedForm) {
     constructQuadraticFormFast(sigma);
     return;

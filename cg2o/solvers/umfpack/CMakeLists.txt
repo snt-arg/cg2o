@@ -59,6 +59,8 @@ if (APPLE)
 endif()
 
 target_compile_features(solver_eigen_umfpack PUBLIC cxx_std_20)
+target_compile_definitions(solver_eigen_umfpack PUBLIC CG2O_HAVE_UMFPACK=1)
+target_link_libraries(solver_eigen_umfpack PUBLIC OpenMP::OpenMP_CXX)
 
  
 install(TARGETS solver_eigen_umfpack

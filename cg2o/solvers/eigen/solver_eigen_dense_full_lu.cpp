@@ -27,8 +27,6 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
-
-
 #include "g2o/core/block_solver.h"
 #include "g2o/core/optimization_algorithm_dogleg.h"
 #include "g2o/core/optimization_algorithm_factory.h"
@@ -45,21 +43,23 @@ namespace cg2o {
 namespace {
 // Allocate FullLU solver
 template <int p, int l, bool blockorder>
- std::unique_ptr<g2o::BlockSolverBase> AllocateSolverFullLU() {
-  G2O_DEBUG("Using EigenDenseFullLU poseDim {} landMarkDim {} blockordering {}", p, l, blockorder);
-  auto linearSolver = std::make_unique<
-      LinearSolverEigenDenseFullLU<typename g2o::BlockSolverPL<p, l>::PoseMatrixType>>();
- // linearSolver->setBlockOrdering(blockorder);
+std::unique_ptr<g2o::BlockSolverBase> AllocateSolverFullLU() {
+  G2O_DEBUG("Using EigenDenseFullLU poseDim {} landMarkDim {} blockordering {}",
+            p, l, blockorder);
+  auto linearSolver = std::make_unique<LinearSolverEigenDenseFullLU<
+      typename g2o::BlockSolverPL<p, l>::PoseMatrixType>>();
+  // linearSolver->setBlockOrdering(blockorder);
   return std::make_unique<g2o::BlockSolverPL<p, l>>(std::move(linearSolver));
 }
-}  // namespace
+} // namespace
 
 /**
  * Helper function for allocating FullLU-based solvers
  */
-static g2o::OptimizationAlgorithm* createSolverFullLU(const std::string& fullSolverName) {
+static g2o::OptimizationAlgorithm *
+createSolverFullLU(const std::string &fullSolverName) {
   static const std::map<std::string,
-                        std::function< std::unique_ptr<g2o::BlockSolverBase>()>>
+                        std::function<std::unique_ptr<g2o::BlockSolverBase>()>>
       solver_factories{
           {"var", &AllocateSolverFullLU<-1, -1, true>},
           {"fix3_2", &AllocateSolverFullLU<3, 2, true>},
@@ -72,7 +72,8 @@ static g2o::OptimizationAlgorithm* createSolverFullLU(const std::string& fullSol
   using namespace g2o;
   string solverName = fullSolverName.substr(3);
   auto solverf = solver_factories.find(solverName);
-  if (solverf == solver_factories.end()) return nullptr;
+  if (solverf == solver_factories.end())
+    return nullptr;
 
   string methodName = fullSolverName.substr(0, 2);
 
@@ -87,11 +88,13 @@ static g2o::OptimizationAlgorithm* createSolverFullLU(const std::string& fullSol
   return nullptr;
 }
 
-class EigenDenseFullLU_SolverCreator : public g2o::AbstractOptimizationAlgorithmCreator {
- public:
-  explicit EigenDenseFullLU_SolverCreator(const g2o::OptimizationAlgorithmProperty& p)
+class EigenDenseFullLU_SolverCreator
+    : public g2o::AbstractOptimizationAlgorithmCreator {
+public:
+  explicit EigenDenseFullLU_SolverCreator(
+      const g2o::OptimizationAlgorithmProperty &p)
       : AbstractOptimizationAlgorithmCreator(p) {}
-  virtual g2o::OptimizationAlgorithm* construct() {
+  virtual g2o::OptimizationAlgorithm *construct() {
     return createSolverFullLU(property().name);
   }
 };
@@ -100,9 +103,13 @@ class EigenDenseFullLU_SolverCreator : public g2o::AbstractOptimizationAlgorithm
 G2O_REGISTER_OPTIMIZATION_LIBRARY(eigen_dense_full_lu);
 
 // Gauss-Newton solvers
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(gn_var_dense_full_lu, new EigenDenseFullLU_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("gn_var_dense_full_lu", "Gauss-Newton: Dense Full LU solver (variable blocksize)", "DenseFullLU", false, Eigen::Dynamic, Eigen::Dynamic)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    gn_var_dense_full_lu,
+    new EigenDenseFullLU_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "gn_var_dense_full_lu",
+        "Gauss-Newton: Dense Full LU solver (variable blocksize)",
+        "DenseFullLU", false, Eigen::Dynamic, Eigen::Dynamic)));
 
 // Similarly add other solvers like Levenberg, Dogleg...
 
-}  // namespace cg2o
+} // namespace cg2o

@@ -33,8 +33,13 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include "g2o/stuff/logger.h"
 #include "sparse_optimizer_for_constraints.h"
 #include <Eigen/Core>
+#include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -69,6 +74,159 @@ template <typename Derived>
 SparseOptimizerForConstraints<Derived>::~SparseOptimizerForConstraints() =
     default;
 
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::invalidateActiveStructure() {
+  clearIndexMapping();
+  _ivMap.clear();
+  _activeVertices.clear();
+  _activeEdges.clear();
+  _activeEdgesEq.clear();
+  _activeEdgesIneq.clear();
+  _fixedEdgesEq.clear();
+  _fixedEdgesIneq.clear();
+}
+
+template <typename Derived>
+bool SparseOptimizerForConstraints<Derived>::fixedConstraintsFeasible() {
+  return verifyEqFeasibility(_fixedEdgesEq, -1.0) &&
+         verifyIneqFeasibility(_fixedEdgesIneq, -1.0);
+}
+
+template <typename Derived>
+bool SparseOptimizerForConstraints<Derived>::removeEdge(
+    HyperGraph::Edge *edge) {
+  if (!edges().count(edge))
+    return false;
+  auto *e = static_cast<OptimizableGraph::Edge *>(edge);
+  if (_edgeEqSet.count(e) && !e->vertices().empty())
+    std::erase(_vEqLagrangeMultipliers,
+               static_cast<OptimizableGraph::Vertex *>(e->vertices().back()));
+  _edgeEqSet.erase(e);
+  _edgeIneqSet.erase(e);
+  updateMultipliersEqFunctionMap.erase(e);
+  updateMultipliersIneqFunctionMap.erase(e);
+  // update the active structure in place: optimize() can follow directly,
+  // without initializeOptimization()
+  removeFromActiveStructure(e);
+  return g2o::SparseOptimizer::removeEdge(edge);
+}
+
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::removeFromActiveStructure(
+    OptimizableGraph::Edge *edge) {
+  std::erase(_fixedEdgesEq, edge);
+  std::erase(_fixedEdgesIneq, edge);
+  // an inactive edge (fixed, other level, not initialized yet) does not
+  // decide whether any vertex is active
+  if (std::erase(_activeEdges, edge) == 0)
+    return;
+  std::erase(_activeEdgesIneq, edge);
+  std::erase(_activeEdgesEq, edge);
+
+  // initializeOptimization() keeps a vertex active only while an active edge
+  // uses it; one pass over the remaining active edges finds the vertices of
+  // the removed edge that are still used (e.g. not an equality multiplier)
+  const auto &vertices = edge->vertices();
+  std::vector<char> stillUsed(vertices.size(), 0);
+  for (auto *other : _activeEdges)
+    for (auto *v : other->vertices())
+      for (std::size_t i = 0; i < vertices.size(); ++i)
+        if (vertices[i] == v)
+          stillUsed[i] = 1;
+
+  bool indexMapChanged = false;
+  for (std::size_t i = 0; i < vertices.size(); ++i) {
+    auto *v = static_cast<OptimizableGraph::Vertex *>(vertices[i]);
+    // erase() returns 0 for a vertex repeated in the edge (already dropped)
+    if (stillUsed[i] || !v || std::erase(_activeVertices, v) == 0)
+      continue;
+    const int idx = v->hessianIndex();
+    if (idx >= 0 && idx < static_cast<int>(_ivMap.size()) && _ivMap[idx] == v) {
+      _ivMap.erase(_ivMap.begin() + idx);
+      indexMapChanged = true;
+    }
+    v->setHessianIndex(-1);
+  }
+  // same consecutive numbering as buildIndexMapping() on the remaining set;
+  // optimize() rebuilds the linear system structure from it
+  if (indexMapChanged)
+    for (std::size_t k = 0; k < _ivMap.size(); ++k)
+      _ivMap[k]->setHessianIndex(static_cast<int>(k));
+}
+
+template <typename Derived>
+bool SparseOptimizerForConstraints<Derived>::removeVertex(HyperGraph::Vertex *v,
+                                                          bool detach) {
+  if (!v || vertex(v->id()) != v)
+    return false;
+  std::erase(_vEqLagrangeMultipliers,
+             static_cast<OptimizableGraph::Vertex *>(v));
+  invalidateActiveStructure();
+  return g2o::SparseOptimizer::removeVertex(v, detach);
+}
+
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::clear() {
+  _edgeEqSet.clear();
+  _edgeIneqSet.clear();
+  _vEqLagrangeMultipliers.clear();
+  updateMultipliersEqFunctionMap.clear();
+  updateMultipliersIneqFunctionMap.clear();
+  invalidateActiveStructure();
+  g2o::SparseOptimizer::clear();
+}
+
+template <typename Derived>
+bool SparseOptimizerForConstraints<Derived>::attachConstraintEdge(
+    OptimizableGraph::Edge *edge) {
+  if (!edge || edges().count(edge))
+    return false;
+  for (auto *v : edge->vertices())
+    if (!v || vertex(v->id()) != v)
+      return false;
+  if (g2o::OptimizableGraph::addEdge(edge))
+    return true;
+  // g2o may insert an edge before parameter/cache resolution fails. Detach
+  // without deleting: a failed insertion leaves ownership with the caller.
+  if (edges().erase(edge))
+    for (auto *v : edge->vertices())
+      if (v)
+        v->edges().erase(edge);
+  return false;
+}
+
+template <typename Derived>
+template <int D, typename E, typename... VertexTypes>
+VertexLagrangeMultiplier<D> *
+SparseOptimizerForConstraints<Derived>::attachEqualityEdge(
+    BaseFixedSizedEdgeEq<D, E, VertexTypes...> *edge) {
+  if (!edge || edges().count(edge))
+    return nullptr;
+  const int id = edge->getVertexLagrangeMultiplierId();
+  if (id < 0 || vertex(id))
+    return nullptr;
+  for (std::size_t i = 0; i + 1 < edge->vertices().size(); ++i) {
+    auto *v = edge->vertices()[i];
+    if (!v || vertex(v->id()) != v)
+      return nullptr;
+  }
+  auto multiplier = std::make_unique<VertexLagrangeMultiplier<D>>();
+  multiplier->setId(id);
+  multiplier->setInitialValue(_lagrange_multiplier_initial_eq);
+  if (!static_cast<Derived *>(this)->addVertex(multiplier.get()))
+    return nullptr;
+  auto *nu = multiplier.release();
+  edge->setVertex(edge->vertices().size() - 1, nu);
+  if (attachConstraintEdge(edge))
+    return nu;
+  edge->setVertex(edge->vertices().size() - 1, nullptr);
+  static_cast<Derived *>(this)->removeVertex(nu);
+#if !G2O_DELETE_IMPLICITLY_OWNED_OBJECTS
+  delete nu;
+#endif
+  return nullptr;
+}
+
 // Setter solver paramters
 template <typename Derived>
 bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
@@ -91,7 +249,10 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
   // ISPD then updated its multiplier and slack twice per iteration
   _activeEdgesIneq.clear();
   _activeEdgesEq.clear();
+  _fixedEdgesEq.clear();
+  _fixedEdgesIneq.clear();
   set<Edge *> auxEdgeSet; // temporary structure to avoid duplicates
+  set<Edge *> fixedEdgeSet;
   for (HyperGraph::VertexSet::iterator it = vset.begin(); it != vset.end();
        ++it) {
     OptimizableGraph::Vertex *v = (OptimizableGraph::Vertex *)*it;
@@ -112,9 +273,12 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
             break;
           }
         }
-        if (allVerticesOK && !e->allVerticesFixed()) {
-          auxEdgeSet.insert(e);
-          levelEdges++;
+        if (allVerticesOK) {
+          if (!e->allVerticesFixed()) {
+            auxEdgeSet.insert(e);
+            levelEdges++;
+          } else
+            fixedEdgeSet.insert(e);
         }
       }
     }
@@ -138,6 +302,12 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
   }
 
   _activeEdges.reserve(auxEdgeSet.size());
+  for (auto *e : fixedEdgeSet) {
+    if (_edgeEqSet.count(e))
+      _fixedEdgesEq.push_back(e);
+    if (_edgeIneqSet.count(e))
+      _fixedEdgesIneq.push_back(e);
+  }
   _activeEdgesIneq.reserve(_edgeIneqSet.size());
   for (set<Edge *>::iterator it = auxEdgeSet.begin(); it != auxEdgeSet.end();
        ++it) {
@@ -175,69 +345,123 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(int level) {
 template <typename Derived>
 bool SparseOptimizerForConstraints<Derived>::updateInitialization(
     HyperGraph::VertexSet &vset, HyperGraph::EdgeSet &eset) {
+  if (!_algorithm)
+    return false;
+  // O(1) membership test for _ivMap; a stale Hessian index fails the check
+  auto inIndexMap = [this](OptimizableGraph::Vertex *v) {
+    const int idx = v->hessianIndex();
+    return idx >= 0 && idx < static_cast<int>(_ivMap.size()) &&
+           _ivMap[idx] == v;
+  };
+  // Validate the whole request before mutating an existing index map.
+  for (auto *raw : vset) {
+    auto *v = static_cast<OptimizableGraph::Vertex *>(raw);
+    if (!v || vertex(v->id()) != v || v->marginalized())
+      return false;
+  }
+  for (auto *raw : eset) {
+    auto *e = static_cast<OptimizableGraph::Edge *>(raw);
+    if (!e || !edges().count(e) || e->numUndefinedVertices())
+      return false;
+    for (auto *rawVertex : e->vertices()) {
+      auto *v = static_cast<OptimizableGraph::Vertex *>(rawVertex);
+      if (!v->fixed() && !inIndexMap(v) && !vset.count(v))
+        return false;
+    }
+  }
+  // hash sets instead of linear searches through the containers
+  std::unordered_set<OptimizableGraph::Vertex *> activeVertices(
+      _activeVertices.begin(), _activeVertices.end());
+  std::unordered_set<OptimizableGraph::Edge *> activeEdges(_activeEdges.begin(),
+                                                           _activeEdges.end());
+  std::unordered_set<OptimizableGraph::Edge *> fixedEdgesEq(
+      _fixedEdgesEq.begin(), _fixedEdgesEq.end());
+  std::unordered_set<OptimizableGraph::Edge *> fixedEdgesIneq(
+      _fixedEdgesIneq.begin(), _fixedEdgesIneq.end());
   std::vector<HyperGraph::Vertex *> newVertices;
-  newVertices.reserve(vset.size());
-  _activeVertices.reserve(_activeVertices.size() + vset.size());
-  _activeEdgesIneq.reserve(_edgeIneqSet.size());
-
-  _activeEdges.reserve(_activeEdges.size() + eset.size());
-  for (HyperGraph::EdgeSet::iterator it = eset.begin(); it != eset.end();
-       ++it) {
-    OptimizableGraph::Edge *e = static_cast<OptimizableGraph::Edge *>(*it);
-    if (!e->allVerticesFixed()) {
-      _activeEdges.push_back(e);
-      //-----------------------------------------
-      // add the inequality edges to the active edges if they are in the
-      // inequality set
-      if (_edgeIneqSet.find(e) != _edgeIneqSet.end())
-        // Element found, add it to _activeEdgesIneq
-        _activeEdgesIneq.push_back(
-            e); // Dereference the iterator to get the element
-      //-----------------------------------------
-    }
-  }
-  // update the index mapping
-  size_t next = _ivMap.size();
-  for (HyperGraph::VertexSet::iterator it = vset.begin(); it != vset.end();
-       ++it) {
-    OptimizableGraph::Vertex *v = static_cast<OptimizableGraph::Vertex *>(*it);
-    if (!v->fixed()) {
-      if (!v->marginalized()) {
-        v->setHessianIndex(next);
-        _ivMap.push_back(v);
-        newVertices.push_back(v);
-        _activeVertices.push_back(v);
-        next++;
-      } else // not supported right now
-        abort();
-    } else {
+  HyperGraph::EdgeSet newEdges;
+  for (auto *raw : vset) {
+    auto *v = static_cast<OptimizableGraph::Vertex *>(raw);
+    if (activeVertices.insert(v).second)
+      _activeVertices.push_back(v);
+    if (v->fixed())
       v->setHessianIndex(-1);
+    else if (!inIndexMap(v)) {
+      v->setHessianIndex(static_cast<int>(_ivMap.size()));
+      _ivMap.push_back(v);
+      newVertices.push_back(v);
     }
   }
-
-  if (newVertices.size() != vset.size()) {
-    G2O_ERROR("something went wrong, size mismatch {} != {}", vset.size(),
-              newVertices.size());
+  for (auto *raw : eset) {
+    auto *e = static_cast<OptimizableGraph::Edge *>(raw);
+    if (e->allVerticesFixed()) {
+      if (_edgeEqSet.count(e) && fixedEdgesEq.insert(e).second)
+        _fixedEdgesEq.push_back(e);
+      if (_edgeIneqSet.count(e) && fixedEdgesIneq.insert(e).second)
+        _fixedEdgesIneq.push_back(e);
+      continue;
+    }
+    if (!activeEdges.insert(e).second)
+      continue;
+    _activeEdges.push_back(e);
+    newEdges.insert(e);
+    if (_edgeIneqSet.count(e))
+      _activeEdgesIneq.push_back(e);
+    if (_edgeEqSet.count(e))
+      _activeEdgesEq.push_back(e);
   }
-  return _algorithm->updateStructure(newVertices, eset);
+  sortVectorContainers();
+  if (newVertices.empty() && newEdges.empty())
+    return true;
+  // addEdge() updates maximum workspace sizes, but does not allocate them.
+  // New constraint dimensions/arity must be allocated before the next solve.
+  if (!_jacobianWorkspace.allocate() ||
+      !_algorithm->updateStructure(newVertices, newEdges)) {
+    invalidateActiveStructure();
+    return false;
+  }
+  return true;
 }
 
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::updateEdgeVertices(
     OptimizableGraph::Edge *edge, const double *update, double scalingFactor) {
-  for (size_t i = 0; i < edge->vertices().size(); ++i) {
-    auto *vertex = static_cast<OptimizableGraph::Vertex *>(edge->vertex(i));
-    if (vertex->fixed())
+  const auto &vertices = edge->vertices();
+  for (std::size_t i = 0; i < vertices.size(); ++i) {
+    auto *vertex = static_cast<OptimizableGraph::Vertex *>(vertices[i]);
+    if (vertex->fixed() || std::find(vertices.begin(), vertices.begin() + i,
+                                     vertex) != vertices.begin() + i)
       continue;
-
-    int offset = vertex->colInHessian();
-
-    Eigen::Map<const Eigen::VectorXd> updateVec(update + offset,
-                                                vertex->dimension());
-    Eigen::VectorXd scaledUpdate = scalingFactor * updateVec;
-
-    vertex->oplus(scaledUpdate.data());
+    const double *increment = update + vertex->colInHessian();
+    const int dimension = vertex->dimension();
+    if (scalingFactor != 1.0) {
+      if (_scaledUpdate.size() < dimension)
+        _scaledUpdate.resize(dimension);
+      _scaledUpdate.head(dimension) =
+          scalingFactor *
+          Eigen::Map<const Eigen::VectorXd>(increment, dimension);
+      increment = _scaledUpdate.data();
+    }
+    vertex->oplus(increment);
   }
+}
+
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::applyScaledUpdate(
+    const double *update, double scale) {
+  if (scale == 1.0) {
+    g2o::SparseOptimizer::update(update);
+    return;
+  }
+  const int size =
+      static_cast<g2o::OptimizationAlgorithmWithHessian *>(_algorithm)
+          ->solver()
+          .vectorSize();
+  if (_scaledUpdate.size() < size)
+    _scaledUpdate.resize(size);
+  _scaledUpdate.head(size) =
+      scale * Eigen::Map<const Eigen::VectorXd>(update, size);
+  g2o::SparseOptimizer::update(_scaledUpdate.data());
 }
 
 template <typename Derived>
@@ -255,6 +479,8 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
   //-----------------------------------------
   _activeEdgesIneq.clear();
   _activeEdgesEq.clear();
+  _fixedEdgesEq.clear();
+  _fixedEdgesIneq.clear();
   _activeEdgesIneq.reserve(_edgeIneqSet.size());
   //-----------------------------------------
   set<Vertex *> auxVertexSet; // temporary structure to avoid duplicates
@@ -263,6 +489,13 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
     OptimizableGraph::Edge *e = (OptimizableGraph::Edge *)(*it);
     if (e->numUndefinedVertices())
       continue;
+    if (e->allVerticesFixed()) {
+      if (_edgeEqSet.count(e))
+        _fixedEdgesEq.push_back(e);
+      if (_edgeIneqSet.count(e))
+        _fixedEdgesIneq.push_back(e);
+      continue;
+    }
     for (vector<HyperGraph::Vertex *>::const_iterator vit =
              e->vertices().begin();
          vit != e->vertices().end(); ++vit) {
@@ -358,11 +591,13 @@ bool SparseOptimizerForConstraints<Derived>::verifyConvergence(double epsilon) {
   Eigen::Map<const Eigen::VectorXd> updateVec(update, xSize);
 
   // the objective value is only evaluated for the relative criterion
-  const double cost =
-      terminationCriteria().needsCost() ? this->activeChi2() : 0.0;
+  double cost = 0.0;
+  if (terminationCriteria().needsCost()) {
+    computeActiveErrors();
+    cost = this->activeRobustChi2();
+  }
 
-  if (terminationCriteria().verifyConvergence(bVec, updateVec, epsilon,
-                                              cost)) {
+  if (terminationCriteria().verifyConvergence(bVec, updateVec, epsilon, cost)) {
     return true;
   }
   return false;
@@ -389,6 +624,8 @@ void SparseOptimizerForConstraints<Derived>::setWarmStartLagrangeMultiplierFlag(
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::setInnerIterationsMax(
     int maxInnerIterations) {
+  if (maxInnerIterations <= 0)
+    throw std::invalid_argument("inner iteration limit must be positive");
   _num_inner_iterations_max = maxInnerIterations;
 }
 
@@ -401,32 +638,48 @@ void SparseOptimizerForConstraints<Derived>::setLagrangeMultiplierInitial(
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::setEpsilonConstraint(
     double epsilon_feas) {
+  if (!(epsilon_feas >= 0) || !std::isfinite(epsilon_feas))
+    throw std::invalid_argument(
+        "constraint tolerance must be finite and nonnegative");
   _terminationCriteria.epsilon_constraint = epsilon_feas;
 }
 
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::setEpsilonConvergence(
     double epsilon) {
+  if (!(epsilon >= 0) || !std::isfinite(epsilon))
+    throw std::invalid_argument(
+        "convergence tolerance must be finite and nonnegative");
   _terminationCriteria.epsilon_convergence = epsilon;
 }
 
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::setAlphaBacktrackingVector(
     std::vector<double> alphaBacktracking) {
-  _alphaBacktracking = alphaBacktracking;
+  if (alphaBacktracking.empty())
+    throw std::invalid_argument("backtracking sequence must not be empty");
+  double previous = 2.0;
+  for (double value : alphaBacktracking) {
+    if (!(value > 0.0 && value <= 1.0 && value < previous) ||
+        !std::isfinite(value))
+      throw std::invalid_argument("backtracking steps must be finite, in "
+                                  "(0,1], and strictly decreasing");
+    previous = value;
+  }
+  _alphaBacktracking = std::move(alphaBacktracking);
 }
 
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::setAlphaBacktracking(
     double alpha) {
+  defineAlphaBacktracking(alpha);
   _alpha = alpha;
-  defineAlphaBacktracking(_alpha);
 }
 
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::setNumInnerIterationsMax(
     int numInnerIterationsMax) {
-  _num_inner_iterations_max = numInnerIterationsMax;
+  setInnerIterationsMax(numInnerIterationsMax);
 }
 
 template <typename Derived>
@@ -455,9 +708,6 @@ double SparseOptimizerForConstraints<Derived>::NumInnerIterationsMax() {
   return _num_inner_iterations_max;
 }
 
-
-
-
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::defineAlphaBacktracking(
     double alpha) {
@@ -471,17 +721,19 @@ void SparseOptimizerForConstraints<Derived>::defineAlphaBacktracking(
   } // the default case
 
   if (alpha > 0 && alpha < 1) {
-    _alphaBacktracking.clear();
-    _alphaBacktracking.reserve(
-        100); // Pre-allocate memory to avoid reallocations
-    _alphaBacktracking.push_back(1);
-    while (_alphaBacktracking.back() > 1e-30) {
-      _alphaBacktracking.push_back(_alphaBacktracking.back() * alpha);
+    const double steps = std::ceil(std::log(1e-30) / std::log(alpha));
+    if (!std::isfinite(steps) || steps > 100000)
+      throw std::invalid_argument(
+          "backtracking ratio would require more than 100000 steps");
+    std::vector<double> sequence{1.0};
+    sequence.reserve(static_cast<std::size_t>(steps) + 2);
+    while (sequence.back() > 1e-30) {
+      sequence.push_back(sequence.back() * alpha);
     }
+    _alphaBacktracking.swap(sequence);
   } else {
-    std::cerr << "[Error] Invalid alpha value for backtracking: " << alpha
-              << ". It must be between 0 and 1. or -1.0 for the default case"
-              << std::endl;
+    throw std::invalid_argument(
+        "backtracking ratio must be in (0,1), or -1 for the standard sequence");
   }
 }
 

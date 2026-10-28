@@ -27,8 +27,6 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
-
-
 #include "g2o/core/block_solver.h"
 #include "g2o/core/optimization_algorithm_dogleg.h"
 #include "g2o/core/optimization_algorithm_factory.h"
@@ -44,23 +42,23 @@ namespace cg2o {
 
 namespace {
 template <int p, int l, bool blockorder>
- std::unique_ptr<g2o::BlockSolverBase> AllocateSolverLDLT() {
-  G2O_DEBUG(
-      "Using EigenLDLT poseDim {} landMarkDim {} blockordering {}", p,
-      l, blockorder);
-  auto linearSolver = std::make_unique<
-      LinearSolverEigenLDLT<typename g2o::BlockSolverPL<p, l>::PoseMatrixType>>();
+std::unique_ptr<g2o::BlockSolverBase> AllocateSolverLDLT() {
+  G2O_DEBUG("Using EigenLDLT poseDim {} landMarkDim {} blockordering {}", p, l,
+            blockorder);
+  auto linearSolver = std::make_unique<LinearSolverEigenLDLT<
+      typename g2o::BlockSolverPL<p, l>::PoseMatrixType>>();
   linearSolver->setBlockOrdering(blockorder);
   return std::make_unique<g2o::BlockSolverPL<p, l>>(std::move(linearSolver));
 }
-}  // namespace
+} // namespace
 
 /**
  * Helper function for allocating LDLT-based solvers
  */
-static g2o::OptimizationAlgorithm* createSolverLDLT(const std::string& ldltSolverName) {
+static g2o::OptimizationAlgorithm *
+createSolverLDLT(const std::string &ldltSolverName) {
   static const std::map<std::string,
-                        std::function< std::unique_ptr<g2o::BlockSolverBase>()>>
+                        std::function<std::unique_ptr<g2o::BlockSolverBase>()>>
       solver_factories{
           {"var", &AllocateSolverLDLT<-1, -1, true>},
           {"fix3_2", &AllocateSolverLDLT<3, 2, true>},
@@ -73,7 +71,8 @@ static g2o::OptimizationAlgorithm* createSolverLDLT(const std::string& ldltSolve
   using namespace g2o;
   string solverName = ldltSolverName.substr(3);
   auto solverf = solver_factories.find(solverName);
-  if (solverf == solver_factories.end()) return nullptr;
+  if (solverf == solver_factories.end())
+    return nullptr;
 
   string methodName = ldltSolverName.substr(0, 2);
 
@@ -88,11 +87,12 @@ static g2o::OptimizationAlgorithm* createSolverLDLT(const std::string& ldltSolve
   return nullptr;
 }
 
-class EigenLDLT_SolverCreator : public g2o::AbstractOptimizationAlgorithmCreator {
- public:
-  explicit EigenLDLT_SolverCreator(const g2o::OptimizationAlgorithmProperty& p)
+class EigenLDLT_SolverCreator
+    : public g2o::AbstractOptimizationAlgorithmCreator {
+public:
+  explicit EigenLDLT_SolverCreator(const g2o::OptimizationAlgorithmProperty &p)
       : AbstractOptimizationAlgorithmCreator(p) {}
-  virtual g2o::OptimizationAlgorithm* construct() {
+  virtual g2o::OptimizationAlgorithm *construct() {
     return createSolverLDLT(property().name);
   }
 };
@@ -100,10 +100,18 @@ class EigenLDLT_SolverCreator : public g2o::AbstractOptimizationAlgorithmCreator
 // Register LDLT-based solvers
 G2O_REGISTER_OPTIMIZATION_LIBRARY(eigen_ldlt);
 
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(gn_var_ldlt, new EigenLDLT_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("gn_var_ldlt", "Gauss-Newton: LDLT solver with Eigen's SimplicialLDLT (variable blocksize)", "Eigen", false, Eigen::Dynamic, Eigen::Dynamic)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    gn_var_ldlt, new EigenLDLT_SolverCreator(g2o::OptimizationAlgorithmProperty(
+                     "gn_var_ldlt",
+                     "Gauss-Newton: LDLT solver with Eigen's SimplicialLDLT "
+                     "(variable blocksize)",
+                     "Eigen", false, Eigen::Dynamic, Eigen::Dynamic)));
 
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(lm_var_ldlt, new EigenLDLT_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("lm_var_ldlt", "Levenberg: LDLT solver with Eigen's SimplicialLDLT (variable blocksize)", "Eigen", false, Eigen::Dynamic, Eigen::Dynamic)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    lm_var_ldlt, new EigenLDLT_SolverCreator(g2o::OptimizationAlgorithmProperty(
+                     "lm_var_ldlt",
+                     "Levenberg: LDLT solver with Eigen's SimplicialLDLT "
+                     "(variable blocksize)",
+                     "Eigen", false, Eigen::Dynamic, Eigen::Dynamic)));
 
-}  // namespace cg2o
+} // namespace cg2o

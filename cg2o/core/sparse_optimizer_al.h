@@ -159,14 +159,18 @@ public:
 
 public:
   // Setter for the mu value
+  // Compatibility aliases for the initial penalty. Current penalties are
+  // per-edge vectors, available through each constraint edge's rho().
   void setRho(double rho);
   void setRhoInitial(double rhoInitial);
+  void setRhoMin(double rhoMin);
   void setRhoMax(double rhoMax);
   void setRhoUpdateFactor(double rhoUpdateFactor);
 
   // getter for the solver parameters
   double Rho() const;
   double RhoInitial() const;
+  double RhoMin() const;
   double RhoMax() const;
   double RhoUpdateFactor() const;
 
@@ -174,9 +178,6 @@ public:
   void resetLagrangeMultiplierEq() override;
 
 protected:
-  std::unordered_map<void *, std::function<void()>>
-      updateMultipliersIneqFunctionMap;
-
   double _rho_min = .00001;      // Minimum value for the penalty parameter
   double _rho_initial = 10;      // Initial value for the penalty parameter
   double _rho_max = 500;         // Maximum value for the penalty parameter
@@ -191,7 +192,7 @@ protected:
 template <int D, typename E, typename... VertexTypes>
 bool SparseOptimizerAL::addEdgeIneqImpl(
     BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *e) {
-  bool eresult = OptimizableGraph::addEdge(e);
+  bool eresult = this->attachConstraintEdge(e);
   if (!eresult) {
     std::cerr << "[Error] Failed adding Ineq edge to the optimizer"
               << std::endl;
@@ -203,6 +204,10 @@ bool SparseOptimizerAL::addEdgeIneqImpl(
       Eigen::Matrix<double, D, 1>::Constant(_rho_initial);
   e->setSlackVariable(rho_bar);
   e->setRho(rho_bar);
+  e->setLagrangeMultiplier(Eigen::Matrix<double, D, 1>::Constant(
+      std::max(0.0, _lagrange_multiplier_initial_eq)));
+  // no computeError() here: the problem data may not be set yet when edges
+  // are added; optimize() evaluates the constraints before using them
   // save the constraint variation in the information matrix
 
   e->setConstraintViolationPrev(e->error().array().min(0.0));
@@ -226,25 +231,12 @@ bool SparseOptimizerAL::addEdgeIneqImpl(
 template <int D, typename E, typename... VertexTypes>
 bool SparseOptimizerAL::addEdgeEqImpl(
     BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e) {
-  // create new vertex for the lagrangian
-  auto *vLagrangian = new VertexLagrangeMultiplier<D>();
-  // auto* nu = new VertexLagrangeMultiplier<D>();
-  vLagrangian->setId(e->getVertexLagrangeMultiplierId());
-  vLagrangian->setInitialValue(_lagrange_multiplier_initial_eq);
-
-  // Add the Nu vertex to the optimizer
-  this->addVertex(vLagrangian);
-
-  // assign the vertex to the edge
-  e->setVertex(e->vertices().size() - 1, vLagrangian);
-
-  bool eresult = OptimizableGraph::addEdge(e);
-  if (!eresult) {
-    std::cerr << "[Error] adding Eq edge to the optimizer" << std::endl;
+  auto *vLagrangian = this->attachEqualityEdge(e);
+  if (!vLagrangian)
     return false;
-  }
 
   vLagrangian->setFixed(true);
+  // no computeError() here, see addEdgeIneqImpl
 
   Eigen::Matrix<double, D, 1> rho_bar =
       Eigen::Matrix<double, D, 1>::Constant(_rho_initial);
@@ -293,6 +285,8 @@ void SparseOptimizerAL::updateMultipliers(EdgeType &edge) {
   constexpr bool is_ineq =
       std::is_base_of<BaseFixedSizedEdgeIneq<D, E, VertexTypes...>,
                       EdgeType>::value;
+  edge.computeError(); // multipliers must use the current, accepted primal
+                       // point
   if (_reset_lagrange_multipliers) {
     if constexpr (is_ineq) {
       auto multiplier = edge.lagrangeMultiplier();
@@ -445,7 +439,7 @@ void SparseOptimizerAL::constructQuadraticFormEq(
   auto rho = edge.rho();
   Eigen::Matrix<double, 2 * D, 1> weightedError =
       Eigen::Matrix<double, 2 * D, 1>::Zero();
-  Eigen::DiagonalMatrix<double, 2 * D> omega_matrix =
+  Eigen::DiagonalMatrix<double, 2 *D> omega_matrix =
       Eigen::DiagonalMatrix<double, 2 * D>(
           Eigen::Matrix<double, 2 * D, 1>::Zero());
   for (int i = 0; i < D; ++i) {

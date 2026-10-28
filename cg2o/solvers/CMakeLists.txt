@@ -1,4 +1,6 @@
-add_subdirectory(umfpack)
+if(CG2O_BUILD_UMFPACK)
+  add_subdirectory(umfpack)
+endif()
 
 # Quasi-definite LDL^T solver (Eigen SimplicialLDLT). Always built,
 # independent of CG2O_BUILD_EIGEN_SOLVERS: it only needs Eigen + g2o. The
@@ -16,6 +18,7 @@ target_link_libraries(solver_qdldlt PUBLIC
   g2o::core
   g2o::stuff
   ${CG2O_EIGEN3_EIGEN_TARGET}
+  OpenMP::OpenMP_CXX
 )
 set_target_properties(solver_qdldlt PROPERTIES
   OUTPUT_NAME ${CG2O_LIB_PREFIX}solver_qdldlt

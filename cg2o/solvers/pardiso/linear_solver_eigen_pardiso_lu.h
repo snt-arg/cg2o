@@ -43,6 +43,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include <mkl.h>
 #include <omp.h>
 
+#include <algorithm>
+
 namespace cg2o {
 
 /**
@@ -70,6 +72,17 @@ public:
 
   virtual bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
                      double *b) override {
+    if (A.rows() == 0)
+      return true;
+    if (A.rows() == A.cols() && solveImpl(A, x, b))
+      return true;
+    std::fill(x, x + A.cols(), 0.0);
+    return false;
+  }
+
+protected:
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+                 double *b) {
     using namespace g2o;
     double t;
     if (!computePardisoLU(A, t))
@@ -80,7 +93,7 @@ public:
     VectorX::ConstMapType bb(b, _sparseMatrix.cols());
     xx = _pardisoLU.solve(bb);
 
-    if (_pardisoLU.info() != Eigen::Success) {
+    if (_pardisoLU.info() != Eigen::Success || !xx.allFinite()) {
       G2O_ERROR("PardisoLU solve failed.");
       return false;
     }
@@ -101,7 +114,8 @@ protected:
   PardisoLUDecomposition _pardisoLU;
 
   // Compute PardisoLU decomposition
-  bool computePardisoLU(const g2o::SparseBlockMatrix<MatrixType> &A, double &t) {
+  bool computePardisoLU(const g2o::SparseBlockMatrix<MatrixType> &A,
+                        double &t) {
     // Resize matrix if needed
     if (_init)
       _sparseMatrix.resize(A.rows(), A.cols());
@@ -158,13 +172,11 @@ protected:
 
   virtual bool solveBlocks_impl(
       const g2o::SparseBlockMatrix<MatrixType> &A,
-      std::function<void(g2o::MarginalCovarianceCholesky &)> /*compute*/) override {
-    double t;
-    if (!computePardisoLU(A, t))
-      return false;
-
-    g2o::MarginalCovarianceCholesky mcc;
-    return true;
+      std::function<void(g2o::MarginalCovarianceCholesky &)> /*compute*/)
+      override {
+    (void)A;
+    // No covariance factor/callback is supplied by this backend.
+    return false;
   }
 };
 

@@ -101,18 +101,15 @@ void configureMPCParameters(const YAML::Node &config, auto &param,
       getDoubleValue(config["general_settings"], "alpha_backtracking");
   optimizer->setAlphaBacktracking(alpha_backtracking);
 #ifdef USE_AL
-  optimizer->setAlgorithmEq(AlgEqType);
-  optimizer->_lagrange_multiplier_initial_ineq = getDoubleValue(
-      config["general_settings"], "lagrange_multiplier_initial_eq");
-  optimizer->_rho_initial_ineq =
-      getDoubleValue(config["general_settings"], "rho_initial_eq");
-  optimizer->_rho_min_ineq =
-      getDoubleValue(config["general_settings"], "rho_min_eq");
-  optimizer->_rho_max_ineq =
-      getDoubleValue(config["general_settings"], "rho_max_eq");
-  optimizer->_rho_update_factor_ineq =
-      getDoubleValue(config["general_settings"], "rho_update_factor_eq");
-
+  // one set of AL settings is used for both equality and inequality edges
+  optimizer->setLagrangeMultiplierInitial(getDoubleValue(
+      config["general_settings"], "lagrange_multiplier_initial_eq"));
+  optimizer->setRhoInitial(
+      getDoubleValue(config["general_settings"], "rho_initial_eq"));
+  optimizer->setRhoMin(getDoubleValue(config["general_settings"], "rho_min_eq"));
+  optimizer->setRhoMax(getDoubleValue(config["general_settings"], "rho_max_eq"));
+  optimizer->setRhoUpdateFactor(
+      getDoubleValue(config["general_settings"], "rho_update_factor_eq"));
 #endif
 #ifdef USE_BIPM
   optimizer->setKappaInitial(
@@ -182,11 +179,11 @@ void saveConfigSettings(auto &data_saver, auto &param, const auto &optimizer) {
 
 #if defined(USE_AL)
   data_saver.write("init_lagrange_multiplier_ineq",
-                   optimizer->_lagrange_multiplier_initial_ineq);
-  data_saver.write("init_rho_ineq", optimizer->_rho_initial_ineq);
-  data_saver.write("rho_min_ineq", optimizer->_rho_min_ineq);
-  data_saver.write("rho_max_ineq", optimizer->_rho_max_ineq);
-  data_saver.write("rho_upate_factor_ineq", optimizer->_rho_update_factor_ineq);
+                   optimizer->getLagrangeMultiplierInitial());
+  data_saver.write("init_rho_ineq", optimizer->RhoInitial());
+  data_saver.write("rho_min_ineq", optimizer->RhoMin());
+  data_saver.write("rho_max_ineq", optimizer->RhoMax());
+  data_saver.write("rho_upate_factor_ineq", optimizer->RhoUpdateFactor());
 #endif
 #ifdef USE_BIPM
   data_saver.write("kappa_final", optimizer->kappaFinal());

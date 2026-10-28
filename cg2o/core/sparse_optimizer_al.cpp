@@ -43,24 +43,26 @@ namespace cg2o {
 using namespace std;
 
 // Default constructor
-SparseOptimizerAL::SparseOptimizerAL() {
-  _num_inner_iterations_max = 10;
-}
+SparseOptimizerAL::SparseOptimizerAL() { _num_inner_iterations_max = 10; }
 
 // Default destructor
 SparseOptimizerAL::~SparseOptimizerAL() = default;
 
 // Setter solver paramters
+void SparseOptimizerAL::setRho(double rho) { setRhoInitial(rho); }
+double SparseOptimizerAL::Rho() const { return RhoInitial(); }
 void SparseOptimizerAL::setRhoInitial(double rhoInitial) {
   _rho_initial = rhoInitial;
 }
 void SparseOptimizerAL::setRhoUpdateFactor(double rhoUpdateFactor) {
   _rho_update_factor = rhoUpdateFactor;
 }
+void SparseOptimizerAL::setRhoMin(double rhoMin) { _rho_min = rhoMin; }
 void SparseOptimizerAL::setRhoMax(double rhoMax) { _rho_max = rhoMax; }
 
 // getter for the solver parameters
 double SparseOptimizerAL::RhoInitial() const { return _rho_initial; }
+double SparseOptimizerAL::RhoMin() const { return _rho_min; }
 double SparseOptimizerAL::RhoMax() const { return _rho_max; }
 double SparseOptimizerAL::RhoUpdateFactor() const { return _rho_update_factor; }
 
@@ -68,9 +70,12 @@ double SparseOptimizerAL::RhoUpdateFactor() const { return _rho_update_factor; }
 void SparseOptimizerAL::resetLagrangeMultiplierEq() {
   // update the multiplier for Equality constraints and reset also the panelty
   // paramters
+  const bool previous = _reset_lagrange_multipliers;
+  _reset_lagrange_multipliers = true;
   for (auto &edge : _activeEdgesEq) {
     executeEqMultiplierUpdate(edge);
   }
+  _reset_lagrange_multipliers = previous;
 }
 
 // Call the stored function later
@@ -92,9 +97,22 @@ void SparseOptimizerAL::executeEqMultiplierUpdate(void *edgePtr) {
   }
 }
 
-
 int SparseOptimizerAL::optimize(int iterations, bool online) {
   using namespace g2o;
+  BatchStatisticsScope statisticsScope;
+  if (iterations < 0)
+    throw std::invalid_argument("iteration budget must be nonnegative");
+  if (iterations == 0 || terminate())
+    return 0;
+  if (!fixedConstraintsFeasible()) {
+    G2O_WARN("constraints on fixed vertices are violated, nothing to "
+             "optimize");
+    return 0;
+  }
+  if (!(_rho_initial > 0) || !std::isfinite(_rho_initial) ||
+      !(_rho_max >= _rho_initial) || !std::isfinite(_rho_max) ||
+      !(_rho_update_factor >= 1) || !std::isfinite(_rho_update_factor))
+    throw std::invalid_argument("invalid AL penalty settings");
 
   if (_ivMap.size() == 0) {
     G2O_WARN("0 vertices to optimize, maybe forgot to call "
@@ -180,7 +198,7 @@ int SparseOptimizerAL::optimize(int iterations, bool online) {
                       cjIterations >= iterations || terminate() ||
                       verifyConvergence(-1 * 10) || !ok;
 
-      if (innerLoopStop) {
+      if (innerLoopStop && ok) {
         // update the multiplier for Equality constraints
         for (auto &edge : _activeEdgesEq) {
           executeEqMultiplierUpdate(edge);

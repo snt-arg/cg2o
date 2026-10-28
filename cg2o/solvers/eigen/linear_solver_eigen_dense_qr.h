@@ -36,6 +36,10 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 
 #include "g2o/core/linear_solver.h"
 
+#include <algorithm>
+
+#include "linear_solver_checks.h"
+
 namespace cg2o {
 
 /**
@@ -44,70 +48,42 @@ namespace cg2o {
 template <typename MatrixType>
 class LinearSolverEigenDenseQR : public g2o::LinearSolver<MatrixType> {
 public:
-  LinearSolverEigenDenseQR() : g2o::LinearSolver<MatrixType>(), _reset(true) {}
+  LinearSolverEigenDenseQR() : g2o::LinearSolver<MatrixType>() {}
 
   virtual ~LinearSolverEigenDenseQR() {}
 
-  virtual bool init() {
-    _reset = true;
-    return true;
-  }
+  virtual bool init() { return true; }
 
   bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
              double *b) {
-    using namespace g2o;
-    int n = A.cols();
-    int m = A.cols();
-
-    MatrixX &H = _H;
-    if (H.cols() != n) {
-      H.resize(n, m);
-      _reset = true;
-    }
-    if (_reset) {
-      _reset = false;
-      H.setZero();
-    }
-
-    // Copy the sparse block matrix into a dense matrix
-    int c_idx = 0;
-    for (size_t i = 0; i < A.blockCols().size(); ++i) {
-      int c_size = A.colsOfBlock(i);
-      assert(c_idx == A.colBaseOfBlock(i) && "Mismatch in block indices");
-
-      const typename SparseBlockMatrix<MatrixType>::IntBlockMap &col =
-          A.blockCols()[i];
-      if (col.size() > 0) {
-        typename SparseBlockMatrix<MatrixType>::IntBlockMap::const_iterator it;
-        for (it = col.begin(); it != col.end(); ++it) {
-          int r_idx = A.rowBaseOfBlock(it->first);
-          // Only the upper triangular block is processed
-          if (it->first <= (int)i) {
-            int r_size = A.rowsOfBlock(it->first);
-            H.block(r_idx, c_idx, r_size, c_size) = *(it->second);
-            if (r_idx != c_idx) // Write the lower triangular block
-              H.block(c_idx, r_idx, c_size, r_size) = it->second->transpose();
-          }
-        }
-      }
-
-      c_idx += c_size;
-    }
-
-    // Solving via QR decomposition
-    Eigen::HouseholderQR<MatrixX> qr(H);
-    VectorX::MapType xvec(x, m);
-    VectorX::ConstMapType bvec(b, n);
-
-    xvec = qr.solve(bvec);
-    // HouseholderQR does not provide an info() method, assume success if no
-    // exceptions
-    return true;
+    if (A.rows() == 0)
+      return true;
+    if (A.rows() == A.cols() && solveImpl(A, x, b))
+      return true;
+    std::fill(x, x + A.cols(), 0.0);
+    return false;
   }
 
 protected:
-  bool _reset;
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+                 double *b) {
+    using namespace g2o;
+    const int n = A.cols();
+    internal::fillSymmetricDenseMatrix(A, _H);
+
+    // Solving via QR decomposition
+    _decomposition.compute(_H);
+    VectorX::MapType xvec(x, n);
+    VectorX::ConstMapType bvec(b, n);
+
+    xvec = _decomposition.solve(bvec);
+    // HouseholderQR has no info(); validate the answer against the system.
+    return internal::acceptableDenseSolution(_H, xvec, bvec);
+  }
+
+protected:
   g2o::MatrixX _H;
+  Eigen::HouseholderQR<g2o::MatrixX> _decomposition;
 };
 
 } // namespace cg2o

@@ -41,6 +41,9 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include "g2o/stuff/logger.h"
 #include "g2o/stuff/timeutil.h"
 
+#include "linear_solver_checks.h"
+#include <algorithm>
+
 namespace cg2o {
 
 /**
@@ -69,6 +72,17 @@ public:
 
   bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
              double *b) {
+    if (A.rows() == 0)
+      return true;
+    if (A.rows() == A.cols() && solveImpl(A, x, b))
+      return true;
+    std::fill(x, x + A.cols(), 0.0);
+    return false;
+  }
+
+protected:
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+                 double *b) {
     using namespace g2o;
     double t;
     bool qrState = computeSparseQR(A, t);
@@ -80,6 +94,11 @@ public:
     Eigen::VectorXd::ConstMapType bb(b, _sparseMatrix.cols());
 
     xx = _sparseQR.solve(bb);
+    if (_sparseQR.info() != Eigen::Success || !xx.allFinite())
+      return false;
+    if (_sparseQR.rank() < _sparseMatrix.cols() &&
+        !internal::acceptableSymmetricSparseSolution(_sparseMatrix, xx, bb))
+      return false;
     G2OBatchStatistics *globalStats = G2OBatchStatistics::globalStats();
     if (globalStats) {
       globalStats->timeNumericDecomposition = get_monotonic_time() - t;
@@ -159,19 +178,9 @@ protected:
       const g2o::SparseBlockMatrix<MatrixType> &A,
       [[maybe_unused]] std::function<void(g2o::MarginalCovarianceCholesky &)>
           compute) {
-    using namespace g2o;
-    // compute the QR factor
-    double t;
-    bool sparseQRState = computeSparseQR(A, t);
-    if (!sparseQRState)
-      return false;
-
-    // book keeping statistics
-    G2OBatchStatistics *globalStats = G2OBatchStatistics::globalStats();
-    if (globalStats) {
-      globalStats->choleskyNNZ = _sparseQR.matrixR().nonZeros();
-    }
-    return true;
+    (void)A;
+    // No covariance factor/callback is supplied by this backend.
+    return false;
   }
 };
 

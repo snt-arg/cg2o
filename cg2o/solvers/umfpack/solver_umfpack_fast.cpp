@@ -2,9 +2,10 @@
 Contributed to cg2o; distributed under the same BSD 3-Clause license as the
 rest of the library.
 
-Registers LinearSolverUmfpackFast with g2o's OptimizationAlgorithmFactory, so it can be
-created by name: <method>_<blocksize>_umfpack_fast, e.g. "gn_var_umfpack_fast"
-(method gn | lm | dl; blocksize var | fix3_2 | fix6_3 | fix7_3, with
+Registers LinearSolverUmfpackFast with g2o's OptimizationAlgorithmFactory, so it
+can be created by name: <method>_<blocksize>_umfpack_fast, e.g.
+"gn_var_umfpack_fast" (method gn | lm | dl; blocksize var | fix3_2 | fix6_3 |
+fix7_3, with
 "_scalar" for scalar instead of block ordering). With a static cg2o build,
 put G2O_USE_OPTIMIZATION_LIBRARY(umfpack_fast) into the program that uses the
 factory so that this file is linked.
@@ -28,15 +29,17 @@ namespace cg2o {
 namespace {
 template <int p, int l, bool blockorder>
 std::unique_ptr<g2o::BlockSolverBase> AllocateSolverUmfpackFast() {
-  G2O_DEBUG("Using LinearSolverUmfpackFast poseDim {} landMarkDim {} blockordering {}", p, l,
-            blockorder);
-  auto linearSolver = std::make_unique<
-      LinearSolverUmfpackFast<typename g2o::BlockSolverPL<p, l>::PoseMatrixType>>();
+  G2O_DEBUG("Using LinearSolverUmfpackFast poseDim {} landMarkDim {} "
+            "blockordering {}",
+            p, l, blockorder);
+  auto linearSolver = std::make_unique<LinearSolverUmfpackFast<
+      typename g2o::BlockSolverPL<p, l>::PoseMatrixType>>();
   linearSolver->setBlockOrdering(blockorder);
   return std::make_unique<g2o::BlockSolverPL<p, l>>(std::move(linearSolver));
 }
 
-g2o::OptimizationAlgorithm* createSolverUmfpackFast(const std::string& fullSolverName) {
+g2o::OptimizationAlgorithm *
+createSolverUmfpackFast(const std::string &fullSolverName) {
   static const std::map<std::string,
                         std::function<std::unique_ptr<g2o::BlockSolverBase>()>>
       solver_factories{
@@ -59,7 +62,8 @@ g2o::OptimizationAlgorithm* createSolverUmfpackFast(const std::string& fullSolve
   const std::string blocks =
       fullSolverName.substr(3, fullSolverName.size() - 3 - suffix.size());
   auto solverf = solver_factories.find(blocks);
-  if (solverf == solver_factories.end()) return nullptr;
+  if (solverf == solver_factories.end())
+    return nullptr;
   if (method == "gn")
     return new g2o::OptimizationAlgorithmGaussNewton(solverf->second());
   if (method == "lm")
@@ -69,37 +73,75 @@ g2o::OptimizationAlgorithm* createSolverUmfpackFast(const std::string& fullSolve
   return nullptr;
 }
 
-class UmfpackFast_SolverCreator : public g2o::AbstractOptimizationAlgorithmCreator {
- public:
-  explicit UmfpackFast_SolverCreator(const g2o::OptimizationAlgorithmProperty& p)
+class UmfpackFast_SolverCreator
+    : public g2o::AbstractOptimizationAlgorithmCreator {
+public:
+  explicit UmfpackFast_SolverCreator(
+      const g2o::OptimizationAlgorithmProperty &p)
       : g2o::AbstractOptimizationAlgorithmCreator(p) {}
-  g2o::OptimizationAlgorithm* construct() override {
+  g2o::OptimizationAlgorithm *construct() override {
     return createSolverUmfpackFast(property().name);
   }
 };
-}  // namespace
+} // namespace
 
 G2O_REGISTER_OPTIMIZATION_LIBRARY(umfpack_fast);
 
-#define CG2O_REGISTER_UmfpackFast(method, blocks, desc, fixed, p, l)            \
-  G2O_REGISTER_OPTIMIZATION_ALGORITHM(                                     \
+#define CG2O_REGISTER_UmfpackFast(method, blocks, desc, fixed, p, l)           \
+  G2O_REGISTER_OPTIMIZATION_ALGORITHM(                                         \
       method##_##blocks##_umfpack_fast,                                        \
-      new UmfpackFast_SolverCreator(g2o::OptimizationAlgorithmProperty(          \
+      new UmfpackFast_SolverCreator(g2o::OptimizationAlgorithmProperty(        \
           #method "_" #blocks "_umfpack_fast", desc, "UMFPACK", fixed, p, l)))
 
-CG2O_REGISTER_UmfpackFast(gn, var, "Gauss-Newton: UMFPACK LU with cached analysis (SuiteSparse) (variable blocksize)", false, Eigen::Dynamic, Eigen::Dynamic);
-CG2O_REGISTER_UmfpackFast(gn, fix3_2, "Gauss-Newton: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)", true, 3, 2);
-CG2O_REGISTER_UmfpackFast(gn, fix6_3, "Gauss-Newton: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)", true, 6, 3);
-CG2O_REGISTER_UmfpackFast(gn, fix7_3, "Gauss-Newton: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)", true, 7, 3);
-CG2O_REGISTER_UmfpackFast(lm, var, "Levenberg: UMFPACK LU with cached analysis (SuiteSparse) (variable blocksize)", false, Eigen::Dynamic, Eigen::Dynamic);
-CG2O_REGISTER_UmfpackFast(lm, fix3_2, "Levenberg: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)", true, 3, 2);
-CG2O_REGISTER_UmfpackFast(lm, fix6_3, "Levenberg: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)", true, 6, 3);
-CG2O_REGISTER_UmfpackFast(lm, fix7_3, "Levenberg: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)", true, 7, 3);
-CG2O_REGISTER_UmfpackFast(dl, var, "Dogleg: UMFPACK LU with cached analysis (SuiteSparse) (variable blocksize)", false, Eigen::Dynamic, Eigen::Dynamic);
-CG2O_REGISTER_UmfpackFast(dl, fix3_2, "Dogleg: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)", true, 3, 2);
-CG2O_REGISTER_UmfpackFast(dl, fix6_3, "Dogleg: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)", true, 6, 3);
-CG2O_REGISTER_UmfpackFast(dl, fix7_3, "Dogleg: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)", true, 7, 3);
+CG2O_REGISTER_UmfpackFast(gn, var,
+                          "Gauss-Newton: UMFPACK LU with cached analysis "
+                          "(SuiteSparse) (variable blocksize)",
+                          false, Eigen::Dynamic, Eigen::Dynamic);
+CG2O_REGISTER_UmfpackFast(gn, fix3_2,
+                          "Gauss-Newton: UMFPACK LU with cached analysis "
+                          "(SuiteSparse) (fixed blocksize)",
+                          true, 3, 2);
+CG2O_REGISTER_UmfpackFast(gn, fix6_3,
+                          "Gauss-Newton: UMFPACK LU with cached analysis "
+                          "(SuiteSparse) (fixed blocksize)",
+                          true, 6, 3);
+CG2O_REGISTER_UmfpackFast(gn, fix7_3,
+                          "Gauss-Newton: UMFPACK LU with cached analysis "
+                          "(SuiteSparse) (fixed blocksize)",
+                          true, 7, 3);
+CG2O_REGISTER_UmfpackFast(lm, var,
+                          "Levenberg: UMFPACK LU with cached analysis "
+                          "(SuiteSparse) (variable blocksize)",
+                          false, Eigen::Dynamic, Eigen::Dynamic);
+CG2O_REGISTER_UmfpackFast(lm, fix3_2,
+                          "Levenberg: UMFPACK LU with cached analysis "
+                          "(SuiteSparse) (fixed blocksize)",
+                          true, 3, 2);
+CG2O_REGISTER_UmfpackFast(lm, fix6_3,
+                          "Levenberg: UMFPACK LU with cached analysis "
+                          "(SuiteSparse) (fixed blocksize)",
+                          true, 6, 3);
+CG2O_REGISTER_UmfpackFast(lm, fix7_3,
+                          "Levenberg: UMFPACK LU with cached analysis "
+                          "(SuiteSparse) (fixed blocksize)",
+                          true, 7, 3);
+CG2O_REGISTER_UmfpackFast(dl, var,
+                          "Dogleg: UMFPACK LU with cached analysis "
+                          "(SuiteSparse) (variable blocksize)",
+                          false, Eigen::Dynamic, Eigen::Dynamic);
+CG2O_REGISTER_UmfpackFast(
+    dl, fix3_2,
+    "Dogleg: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)",
+    true, 3, 2);
+CG2O_REGISTER_UmfpackFast(
+    dl, fix6_3,
+    "Dogleg: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)",
+    true, 6, 3);
+CG2O_REGISTER_UmfpackFast(
+    dl, fix7_3,
+    "Dogleg: UMFPACK LU with cached analysis (SuiteSparse) (fixed blocksize)",
+    true, 7, 3);
 
 #undef CG2O_REGISTER_UmfpackFast
 
-}  // namespace cg2o
+} // namespace cg2o

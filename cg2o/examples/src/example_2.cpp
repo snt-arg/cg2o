@@ -37,12 +37,14 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include <g2o/core/optimization_algorithm_dogleg.h>
 #include <g2o/core/optimization_algorithm_gauss_newton.h>
 #include <g2o/core/optimization_algorithm_levenberg.h>
-#include <g2o/solvers/cholmod/linear_solver_cholmod.h>
 
 #include <Eigen/Core>
 #include <iostream>
 
+#include "cg2o/solvers/eigen/linear_solver_eigen_qdldlt.h"
+#ifdef CG2O_HAVE_UMFPACK
 #include "cg2o/solvers/umfpack/linear_solver_eigen_umfpack_lu.h" // the default solver in cg2o
+#endif
 
 #ifdef USE_ISPD
 #include "cg2o/core/sparse_optimizer_ispd.h" // using the Augmented Lagrangian
@@ -81,6 +83,7 @@ int main(int argc, char **argv) {
   int numberOfIterations = (argc > argCount) ? std::atoi(argv[argCount]) : 150;
   argCount++;
   int solverType = (argc > argCount) ? std::atoi(argv[argCount]) : 0;
+  argCount++;
   double xStart = (argc > argCount) ? std::atof(argv[argCount]) : .1; //change to 1 
   argCount++;
   double yStart = (argc > argCount) ? std::atof(argv[argCount]) : .1;//change to -2 to see the effect 
@@ -153,8 +156,13 @@ int main(int argc, char **argv) {
       linearSolver;
   std::unique_ptr<g2o::OptimizationAlgorithm> algorithm;
 
+#ifdef CG2O_HAVE_UMFPACK
   linearSolver = std::make_unique<
        cg2o::LinearSolverEigenUmfPackLU<g2o::BlockSolverX::PoseMatrixType>>();
+#else
+  linearSolver = std::make_unique<
+       cg2o::LinearSolverEigenQDLDLT<g2o::BlockSolverX::PoseMatrixType>>();
+#endif
 
   blockSolver = std::make_unique<g2o::BlockSolverX>(std::move(linearSolver));
 

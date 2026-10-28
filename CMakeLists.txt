@@ -40,10 +40,22 @@ set(INCLUDES_INSTALL_DIR ${CMAKE_INSTALL_INCLUDEDIR}/cg2o)
 # Configuration option: Default to ISPD optimizer, but allow switching to AL or IPM
 option(CG2O_BUILD_EXAMPLES "Build the examples" OFF)
 option(USE_G2O_SOLVERS "Enable g2o-based solvers (links g2o + csparse and cholmod)" OFF)
+option(CG2O_BUILD_UMFPACK "Build the UMFPACK LU solver (the default cg2o solver)" ON)
 option(CG2O_BUILD_PARDISO "allow using the Paradiso solver" OFF)
 option(CG2O_BUILD_EIGEN_SOLVERS "allow building the Eigen solver" OFF)
 option(CG2O_DEBUG_LINEAR_SOLVER "Enable debug output for linear solvers" OFF)
- 
+# -march=native changes Eigen's memory alignment and vectorization. g2o, cg2o
+# and every application linking them share Eigen types, so all of them must be
+# built with the same choice; a mismatch corrupts the heap. The same value is
+# passed to scripts/build_g2o.sh when g2o is built from here.
+option(CG2O_MARCH_NATIVE "Build cg2o (and the g2o it builds) with -march=native" ON)
+if(CG2O_MARCH_NATIVE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+  set(CG2O_G2O_MARCH_NATIVE ON)
+else()
+  set(CG2O_G2O_MARCH_NATIVE OFF)
+endif()
+
 
 
 #----------------------------------------------------------------------------------------

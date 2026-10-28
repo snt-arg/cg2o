@@ -38,6 +38,10 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 
 #include "g2o/core/linear_solver.h"
 
+#include <algorithm>
+
+#include "linear_solver_checks.h"
+
 namespace cg2o {
 
 /**
@@ -46,14 +50,11 @@ namespace cg2o {
 template <typename MatrixType>
 class LinearSolverEigenSVD : public g2o::LinearSolver<MatrixType> {
 public:
-  LinearSolverEigenSVD() : g2o::LinearSolver<MatrixType>(), _reset(true) {}
+  LinearSolverEigenSVD() : g2o::LinearSolver<MatrixType>() {}
 
   virtual ~LinearSolverEigenSVD() {}
 
-  virtual bool init() {
-    _reset = true;
-    return true;
-  }
+  virtual bool init() { return true; }
 
   void debug_linear_solver(const auto &A, const double *b = nullptr,
                            const double *x = nullptr) {
@@ -96,63 +97,40 @@ public:
 
   bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
              double *b) {
+    if (A.rows() == 0)
+      return true;
+    if (A.rows() == A.cols() && solveImpl(A, x, b))
+      return true;
+    std::fill(x, x + A.cols(), 0.0);
+    return false;
+  }
+
+protected:
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+                 double *b) {
     using namespace g2o;
 
-    int n = A.cols();
-    int m = A.cols();
-
-    MatrixX &H = _H;
-    if (H.cols() != n) {
-      H.resize(n, m);
-      _reset = true;
-    }
-    if (_reset) {
-      _reset = false;
-      H.setZero();
-    }
-
-    // Copy the sparse block matrix into a dense matrix
-    int c_idx = 0;
-    for (size_t i = 0; i < A.blockCols().size(); ++i) {
-      int c_size = A.colsOfBlock(i);
-      assert(c_idx == A.colBaseOfBlock(i) && "Mismatch in block indices");
-
-      const typename SparseBlockMatrix<MatrixType>::IntBlockMap &col =
-          A.blockCols()[i];
-      if (col.size() > 0) {
-        typename SparseBlockMatrix<MatrixType>::IntBlockMap::const_iterator it;
-        for (it = col.begin(); it != col.end(); ++it) {
-          int r_idx = A.rowBaseOfBlock(it->first);
-          // Only the upper triangular block is processed
-          if (it->first <= (int)i) {
-            int r_size = A.rowsOfBlock(it->first);
-            H.block(r_idx, c_idx, r_size, c_size) = *(it->second);
-            if (r_idx != c_idx) // Write the lower triangular block
-              H.block(c_idx, r_idx, c_size, r_size) = it->second->transpose();
-          }
-        }
-      }
-
-      c_idx += c_size;
-    }
+    const int n = A.cols();
+    internal::fillSymmetricDenseMatrix(A, _H);
 
     // Solving via SVD decomposition
-    Eigen::BDCSVD<MatrixX> svd(H, Eigen::ComputeThinU | Eigen::ComputeThinV);
-    VectorX::MapType xvec(x, m);
+    _decomposition.compute(_H, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    VectorX::MapType xvec(x, n);
     VectorX::ConstMapType bvec(b, n);
 
-    xvec = svd.solve(bvec);
+    xvec = _decomposition.solve(bvec);
 
 #if CG2O_DEBUG_LINEAR_SOLVER
     debug_linear_solver(A, b, x);
 #endif
 
-    return svd.info() == Eigen::Success;
+    return _decomposition.info() == Eigen::Success &&
+           internal::acceptableDenseSolution(_H, xvec, bvec);
   }
 
 protected:
-  bool _reset;
   g2o::MatrixX _H;
+  Eigen::BDCSVD<g2o::MatrixX> _decomposition;
 };
 
 } // namespace cg2o

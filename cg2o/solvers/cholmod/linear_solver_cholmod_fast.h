@@ -60,14 +60,19 @@ namespace cg2o {
  */
 template <typename MatrixType>
 class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
- public:
+public:
   struct Options {
-    int supernodal = CHOLMOD_AUTO;  // or CHOLMOD_SIMPLICIAL (LDL^T), CHOLMOD_SUPERNODAL (LL^T, SPD only)
-    bool prepermute = true;       // scatter into P A P^T (no CHOLMOD-internal permuted copy)
-    int ordering = CHOLMOD_AMD;   // scalar ordering if blockOrdering() is false (AMD, METIS, NESDIS, ...)
-    double delta = 0.0;           // > 0 enables quasi-definite mode
-    int refinementSteps = 5;      // max own refinement steps (only if entries were regularized)
-    double refinementTol = 1e-12; // stop when max|r| <= tol * max|b| (or stalled)
+    int supernodal = CHOLMOD_AUTO; // or CHOLMOD_SIMPLICIAL (LDL^T),
+                                   // CHOLMOD_SUPERNODAL (LL^T, SPD only)
+    bool prepermute =
+        true; // scatter into P A P^T (no CHOLMOD-internal permuted copy)
+    int ordering = CHOLMOD_AMD; // scalar ordering if blockOrdering() is false
+                                // (AMD, METIS, NESDIS, ...)
+    double delta = 0.0;         // > 0 enables quasi-definite mode
+    int refinementSteps =
+        5; // max own refinement steps (only if entries were regularized)
+    double refinementTol =
+        1e-12; // stop when max|r| <= tol * max|b| (or stalled)
   };
 
   LinearSolverCholmodFast() : g2o::LinearSolverCCS<MatrixType>() {
@@ -80,12 +85,12 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
     cholmod_free_dense(&_E, &_c);
     cholmod_finish(&_c);
   }
-  LinearSolverCholmodFast(const LinearSolverCholmodFast&) = delete;
-  LinearSolverCholmodFast& operator=(const LinearSolverCholmodFast&) = delete;
+  LinearSolverCholmodFast(const LinearSolverCholmodFast &) = delete;
+  LinearSolverCholmodFast &operator=(const LinearSolverCholmodFast &) = delete;
 
   //! change before the first solve (a change of supernodal/prepermute/ordering
   //! triggers a new analysis at the next optimize())
-  Options& options() { return _opt; }
+  Options &options() { return _opt; }
   //! diagonal entries that received -delta in the last factorization
   int lastRegularizedCount() const { return _numRegularized; }
   //! refinement steps taken in the last solve
@@ -94,35 +99,41 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
   bool isSupernodal() const { return _L != nullptr && _L->is_super; }
 
   bool init() override {
-    _init = true;  // pattern is re-checked; analysis kept if unchanged
+    _init = true; // pattern is re-checked; analysis kept if unchanged
     return true;
   }
 
   // g2o's GN/LM apply the update vector even when solve() fails, so a
   // failed solve leaves x = 0 (no step) instead of stale values.
-  bool solve(const g2o::SparseBlockMatrix<MatrixType>& A, double* x,
-             double* b) override {
-    if (solveImpl(A, x, b)) return true;
+  bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+             double *b) override {
+    if (solveImpl(A, x, b))
+      return true;
     std::fill(x, x + A.rows(), 0.0);
     return false;
   }
 
- protected:
-  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType>& A, double* x,
-                 double* b) {
-    if (!factorize(A)) return false;
+protected:
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+                 double *b) {
+    if (!factorize(A))
+      return false;
     const double t = g2o::get_monotonic_time();
-    for (int k = 0; k < _n; ++k) _bw[k] = b[_perm[k]];  // into factor order
-    if (!solveFactored(_bw.data(), _xw.data())) return false;
+    for (int k = 0; k < _n; ++k)
+      _bw[k] = b[_perm[k]]; // into factor order
+    if (!solveFactored(_bw.data(), _xw.data()))
+      return false;
     _lastRefinementSteps = 0;
-    if (_numRegularized > 0) refine();
-    for (int k = 0; k < _n; ++k) x[_perm[k]] = _xw[k];  // back to g2o order
+    if (_numRegularized > 0)
+      refine();
+    for (int k = 0; k < _n; ++k)
+      x[_perm[k]] = _xw[k]; // back to g2o order
     for (int k = 0; k < _n; ++k)
       if (!std::isfinite(x[k])) {
         G2O_ERROR("LinearSolverCholmodFast: solve produced non-finite values");
         return false;
       }
-    g2o::G2OBatchStatistics* s = g2o::G2OBatchStatistics::globalStats();
+    g2o::G2OBatchStatistics *s = g2o::G2OBatchStatistics::globalStats();
     if (s) {
       s->timeNumericDecomposition += g2o::get_monotonic_time() - t;
       s->choleskyNNZ = static_cast<size_t>(_lnz);
@@ -132,10 +143,10 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
 
   Options _opt;
   cholmod_common _c;
-  cholmod_factor* _L = nullptr;
-  cholmod_dense *_X = nullptr, *_Y = nullptr, *_E = nullptr;  // solve2 work
+  cholmod_factor *_L = nullptr;
+  cholmod_dense *_X = nullptr, *_Y = nullptr, *_E = nullptr; // solve2 work
   bool _init = true;
-  bool _forceSimplicial = false;  // set when supernodal LL^T failed (AUTO)
+  bool _forceSimplicial = false; // set when supernodal LL^T failed (AUTO)
   int _n = 0;
   double _lnz = 0;
   // settings the current analysis was made with
@@ -151,11 +162,12 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
   g2o::MatrixStructure _blockStructure;
 
   void release() {
-    if (_L) cholmod_free_factor(&_L, &_c);
+    if (_L)
+      cholmod_free_factor(&_L, &_c);
   }
 
-  static cholmod_sparse view(int n, std::vector<int>& p, std::vector<int>& i,
-                             double* x, int xtype) {
+  static cholmod_sparse view(int n, std::vector<int> &p, std::vector<int> &i,
+                             double *x, int xtype) {
     cholmod_sparse s;
     s.nrow = s.ncol = n;
     s.nzmax = i.size();
@@ -164,7 +176,7 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
     s.nz = nullptr;
     s.x = x;
     s.z = nullptr;
-    s.stype = 1;  // upper triangle of a symmetric matrix
+    s.stype = 1; // upper triangle of a symmetric matrix
     s.itype = CHOLMOD_INT;
     s.xtype = xtype;
     s.dtype = CHOLMOD_DOUBLE;
@@ -174,8 +186,9 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
   }
 
   void setStat(bool symbolic, double dt) {
-    g2o::G2OBatchStatistics* s = g2o::G2OBatchStatistics::globalStats();
-    if (!s) return;
+    g2o::G2OBatchStatistics *s = g2o::G2OBatchStatistics::globalStats();
+    if (!s)
+      return;
     if (symbolic)
       s->timeSymbolicDecomposition = dt;
     else
@@ -193,7 +206,7 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
            _analyzedBlockOrdering != this->blockOrdering();
   }
 
-  bool factorize(const g2o::SparseBlockMatrix<MatrixType>& A) {
+  bool factorize(const g2o::SparseBlockMatrix<MatrixType> &A) {
     if (_init) {
       const double t0 = g2o::get_monotonic_time();
       this->initMatrixStructure(A);
@@ -201,7 +214,8 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
       std::vector<int> Cp(n + 1), Ci(nz);
       _Cx.resize(nz);
       // A.nonZeros() counts whole blocks; the upper triangle has fewer entries
-      const int nzU = this->_ccsMatrix->fillCCS(Cp.data(), Ci.data(), _Cx.data(), true);
+      const int nzU =
+          this->_ccsMatrix->fillCCS(Cp.data(), Ci.data(), _Cx.data(), true);
       Ci.resize(nzU);
       _Cx.resize(nzU);
       const bool same = _L != nullptr && n == _n && Cp == _Cp && Ci == _Ci &&
@@ -212,7 +226,8 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
         _n = n;
         _Cp.swap(Cp);
         _Ci.swap(Ci);
-        if (!analyze(A)) return false;
+        if (!analyze(A))
+          return false;
         setStat(true, g2o::get_monotonic_time() - t0);
       }
     } else {
@@ -222,14 +237,14 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
     if (!factorizeValues()) {
       // CHOLMOD_AUTO picked supernodal LL^T, which cannot factor an
       // indefinite (KKT) matrix: switch to simplicial LDL^T for good
-      if (_L != nullptr && _L->is_super && _opt.supernodal != CHOLMOD_SUPERNODAL &&
-          !_forceSimplicial) {
-        G2O_WARN(
-            "LinearSolverCholmodFast: supernodal LL^T failed (indefinite "
-            "matrix?), switching to simplicial LDL^T");
+      if (_L != nullptr && _L->is_super &&
+          _opt.supernodal != CHOLMOD_SUPERNODAL && !_forceSimplicial) {
+        G2O_WARN("LinearSolverCholmodFast: supernodal LL^T failed (indefinite "
+                 "matrix?), switching to simplicial LDL^T");
         _forceSimplicial = true;
         release();
-        if (!analyze(A) || !factorizeValues()) return failed(A);
+        if (!analyze(A) || !factorizeValues())
+          return failed(A);
       } else {
         return failed(A);
       }
@@ -238,9 +253,10 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
     return true;
   }
 
-  bool failed(const g2o::SparseBlockMatrix<MatrixType>& A) {
+  bool failed(const g2o::SparseBlockMatrix<MatrixType> &A) {
     if (this->writeDebug()) {
-      G2O_ERROR("LinearSolverCholmodFast: factorization failed, writing debug.txt");
+      G2O_ERROR(
+          "LinearSolverCholmodFast: factorization failed, writing debug.txt");
       A.writeOctave("debug.txt");
     } else {
       G2O_DEBUG("LinearSolverCholmodFast: factorization failed");
@@ -251,7 +267,8 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
   // scatter the values into the factored matrix, regularize, factorize
   bool factorizeValues() {
     const int nzU = static_cast<int>(_Cx.size());
-    for (int e = 0; e < nzU; ++e) _Wx[_map[e]] = _Cx[e];
+    for (int e = 0; e < nzU; ++e)
+      _Wx[_map[e]] = _Cx[e];
     _numRegularized = 0;
     if (_opt.delta > 0.0)
       for (int c = 0; c < _n; ++c) {
@@ -268,11 +285,11 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
   }
 
   // ordering + symbolic analysis for the current pattern and settings
-  bool analyze(const g2o::SparseBlockMatrix<MatrixType>& A) {
+  bool analyze(const g2o::SparseBlockMatrix<MatrixType> &A) {
     const int n = _n, nzU = static_cast<int>(_Ci.size());
     const int mode = currentMode();
     cholmod_sparse S = view(n, _Cp, _Ci, nullptr, CHOLMOD_PATTERN);
-    std::vector<int> given;  // block ordering expanded to the scalar matrix
+    std::vector<int> given; // block ordering expanded to the scalar matrix
     if (this->blockOrdering()) {
       A.fillBlockStructure(_blockStructure);
       cholmod_sparse B;
@@ -296,7 +313,7 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
       this->blockToScalarPermutation(A, blockPerm, scalarPerm);
       given.assign(scalarPerm.data(), scalarPerm.data() + n);
     }
-    auto runAnalysis = [&](cholmod_sparse* M, int* perm, int ordering,
+    auto runAnalysis = [&](cholmod_sparse *M, int *perm, int ordering,
                            int postorder, int supernodal) {
       _c.nmethods = 1;
       _c.method[0].ordering = perm ? CHOLMOD_GIVEN : ordering;
@@ -308,18 +325,21 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
     _perm.resize(n);
     if (_opt.prepermute) {
       // 1. fill-reducing ordering (incl. postorder) of the source pattern
-      cholmod_factor* L0 = runAnalysis(&S, given.empty() ? nullptr : given.data(),
-                                       _opt.ordering, 1, CHOLMOD_SIMPLICIAL);
+      cholmod_factor *L0 =
+          runAnalysis(&S, given.empty() ? nullptr : given.data(), _opt.ordering,
+                      1, CHOLMOD_SIMPLICIAL);
       if (!L0) {
         G2O_ERROR("LinearSolverCholmodFast: ordering failed");
         return false;
       }
-      std::copy((int*)L0->Perm, (int*)L0->Perm + n, _perm.begin());
+      std::copy((int *)L0->Perm, (int *)L0->Perm + n, _perm.begin());
       cholmod_free_factor(&L0, &_c);
       // 2. pattern of the upper triangle of P A P^T and the scatter map
       std::vector<int> pinv(n);
-      for (int k = 0; k < n; ++k) pinv[_perm[k]] = k;
-      std::vector<std::vector<std::pair<int, int>>> col(n);  // (row, source entry)
+      for (int k = 0; k < n; ++k)
+        pinv[_perm[k]] = k;
+      std::vector<std::vector<std::pair<int, int>>> col(
+          n); // (row, source entry)
       for (int j = 0; j < n; ++j)
         for (int k = _Cp[j]; k < _Cp[j + 1]; ++k) {
           const int a = pinv[_Ci[k]], b = pinv[j];
@@ -333,10 +353,11 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
       for (int j = 0; j < n; ++j) {
         std::sort(col[j].begin(), col[j].end());
         _Wp[j] = p;
-        for (auto& re : col[j]) {
+        for (auto &re : col[j]) {
           _Wi[p] = re.first;
           _map[re.second] = p;
-          if (re.first == j) _diagPos[j] = p;
+          if (re.first == j)
+            _diagPos[j] = p;
           ++p;
         }
       }
@@ -353,12 +374,14 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
       _diagPos.assign(n, -1);
       for (int j = 0; j < n; ++j)
         for (int k = _Cp[j]; k < _Cp[j + 1]; ++k)
-          if (_Ci[k] == j) _diagPos[j] = k;
-      _L = runAnalysis(&S, given.empty() ? nullptr : given.data(), _opt.ordering,
-                       1, mode);
+          if (_Ci[k] == j)
+            _diagPos[j] = k;
+      _L = runAnalysis(&S, given.empty() ? nullptr : given.data(),
+                       _opt.ordering, 1, mode);
     }
     if (!_L) {
-      G2O_ERROR("LinearSolverCholmodFast: symbolic analysis failed ({})", _c.status);
+      G2O_ERROR("LinearSolverCholmodFast: symbolic analysis failed ({})",
+                _c.status);
       return false;
     }
     _lnz = _c.lnz;
@@ -376,42 +399,50 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
   }
 
   // solve with the current factor; b and x in factor (W) order
-  bool solveFactored(const double* b, double* x) {
+  bool solveFactored(const double *b, double *x) {
     cholmod_dense B;
     B.nrow = B.d = _n;
     B.ncol = 1;
     B.nzmax = _n;
-    B.x = const_cast<double*>(b);
+    B.x = const_cast<double *>(b);
     B.z = nullptr;
     B.xtype = CHOLMOD_REAL;
     B.dtype = CHOLMOD_DOUBLE;
-    if (!cholmod_solve2(CHOLMOD_A, _L, &B, nullptr, &_X, nullptr, &_Y, &_E, &_c)) {
-      G2O_ERROR("LinearSolverCholmodFast: cholmod_solve2 failed ({})", _c.status);
+    if (!cholmod_solve2(CHOLMOD_A, _L, &B, nullptr, &_X, nullptr, &_Y, &_E,
+                        &_c)) {
+      G2O_ERROR("LinearSolverCholmodFast: cholmod_solve2 failed ({})",
+                _c.status);
       return false;
     }
-    std::copy((double*)_X->x, (double*)_X->x + _n, x);
+    std::copy((double *)_X->x, (double *)_X->x + _n, x);
     return true;
   }
 
   // adaptive refinement against the unregularized matrix (see QDLDLT)
   void refine() {
     double normB = 0.0, prev = 1e300;
-    for (int i = 0; i < _n; ++i) normB = std::max(normB, std::abs(_bw[i]));
+    for (int i = 0; i < _n; ++i)
+      normB = std::max(normB, std::abs(_bw[i]));
     for (int it = 0; it < _opt.refinementSteps; ++it) {
       std::copy(_bw.begin(), _bw.end(), _r.begin());
-      for (int j = 0; j < _n; ++j)  // symmetric product from the upper CCS
+      for (int j = 0; j < _n; ++j) // symmetric product from the upper CCS
         for (int k = _Wp[j]; k < _Wp[j + 1]; ++k) {
           const int i = _Wi[k];
           const double v = (k == _diagPos[j] && _regMask[j]) ? 0.0 : _Wx[k];
           _r[i] -= v * _xw[j];
-          if (i != j) _r[j] -= v * _xw[i];
+          if (i != j)
+            _r[j] -= v * _xw[i];
         }
       double rn = 0.0;
-      for (int i = 0; i < _n; ++i) rn = std::max(rn, std::abs(_r[i]));
-      if (rn <= _opt.refinementTol * normB || rn > 0.5 * prev) break;
+      for (int i = 0; i < _n; ++i)
+        rn = std::max(rn, std::abs(_r[i]));
+      if (rn <= _opt.refinementTol * normB || rn > 0.5 * prev)
+        break;
       prev = rn;
-      if (!solveFactored(_r.data(), _dx.data())) break;
-      for (int i = 0; i < _n; ++i) _xw[i] += _dx[i];
+      if (!solveFactored(_r.data(), _dx.data()))
+        break;
+      for (int i = 0; i < _n; ++i)
+        _xw[i] += _dx[i];
       ++_lastRefinementSteps;
     }
   }
@@ -421,44 +452,52 @@ class LinearSolverCholmodFast : public g2o::LinearSolverCCS<MatrixType> {
    * to the simplicial LL^T form g2o's MarginalCovarianceCholesky expects.
    */
   bool solveBlocks_impl(
-      const g2o::SparseBlockMatrix<MatrixType>& A,
-      std::function<void(g2o::MarginalCovarianceCholesky&)> compute) override {
-    if (!factorize(A)) return false;
+      const g2o::SparseBlockMatrix<MatrixType> &A,
+      std::function<void(g2o::MarginalCovarianceCholesky &)> compute) override {
+    if (!factorize(A))
+      return false;
     if (_numRegularized > 0) {
-      G2O_WARN("LinearSolverCholmodFast: marginal covariances need a positive definite system");
+      G2O_WARN("LinearSolverCholmodFast: marginal covariances need a positive "
+               "definite system");
       return false;
     }
-    if (!_L->is_ll && !_L->is_super) {  // simplicial LDL^T: D on the diagonal
-      const int* Lp = static_cast<const int*>(_L->p);
-      const double* Lx = static_cast<const double*>(_L->x);
+    if (!_L->is_ll && !_L->is_super) { // simplicial LDL^T: D on the diagonal
+      const int *Lp = static_cast<const int *>(_L->p);
+      const double *Lx = static_cast<const double *>(_L->x);
       for (int j = 0; j < _n; ++j)
         if (!(Lx[Lp[j]] > 0.0)) {
-          G2O_WARN("LinearSolverCholmodFast: marginal covariances need a positive definite system");
+          G2O_WARN("LinearSolverCholmodFast: marginal covariances need a "
+                   "positive definite system");
           return false;
         }
     }
-    cholmod_factor* F = cholmod_copy_factor(_L, &_c);
-    if (!F) return false;
-    // simplicial, LL^T, packed, monotonic; first entry of each column = diagonal
+    cholmod_factor *F = cholmod_copy_factor(_L, &_c);
+    if (!F)
+      return false;
+    // simplicial, LL^T, packed, monotonic; first entry of each column =
+    // diagonal
     if (!cholmod_change_factor(CHOLMOD_REAL, 1, 0, 1, 1, F, &_c)) {
       cholmod_free_factor(&F, &_c);
       return false;
     }
     // overall ordering: factor row k is original variable _perm[F->Perm[k]]
-    const int* fp = static_cast<const int*>(F->Perm);
+    const int *fp = static_cast<const int *>(F->Perm);
     std::vector<int> pinv(_n);
-    for (int k = 0; k < _n; ++k) pinv[_perm[fp ? fp[k] : k]] = k;
+    for (int k = 0; k < _n; ++k)
+      pinv[_perm[fp ? fp[k] : k]] = k;
     g2o::MarginalCovarianceCholesky mcc;
-    mcc.setCholeskyFactor(_n, static_cast<int*>(F->p), static_cast<int*>(F->i),
-                          static_cast<double*>(F->x), pinv.data());
+    mcc.setCholeskyFactor(_n, static_cast<int *>(F->p),
+                          static_cast<int *>(F->i), static_cast<double *>(F->x),
+                          pinv.data());
     compute(mcc);
     cholmod_free_factor(&F, &_c);
-    g2o::G2OBatchStatistics* s = g2o::G2OBatchStatistics::globalStats();
-    if (s) s->choleskyNNZ = static_cast<size_t>(_lnz);
+    g2o::G2OBatchStatistics *s = g2o::G2OBatchStatistics::globalStats();
+    if (s)
+      s->choleskyNNZ = static_cast<size_t>(_lnz);
     return true;
   }
 };
 
-}  // namespace cg2o
+} // namespace cg2o
 
-#endif  // CG2O_LINEAR_SOLVER_CHOLMOD_FAST_H
+#endif // CG2O_LINEAR_SOLVER_CHOLMOD_FAST_H

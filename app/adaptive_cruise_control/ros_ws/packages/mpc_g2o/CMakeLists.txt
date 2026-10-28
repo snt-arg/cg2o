@@ -47,7 +47,16 @@ if(OPENMP_FOUND)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
     add_definitions(-DG2O_USE_OPENMP)
 endif()
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native")
+# -march=native changes Eigen's memory alignment and vectorization. g2o and
+# cg2o share Eigen types with this executable, so they must be built with the
+# same flag; a mismatch corrupts the heap ("double free or corruption").
+# Default ON matches CG2O_MARCH_NATIVE and scripts/build_g2o.sh.
+option(MPC_MARCH_NATIVE "Build with -march=native (g2o and cg2o must be built with it too)" ON)
+if(MPC_MARCH_NATIVE)
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native")
+else()
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+endif()
 
 
 # Add the executable

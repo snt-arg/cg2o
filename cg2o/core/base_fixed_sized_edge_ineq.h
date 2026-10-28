@@ -93,7 +93,8 @@ public:
     _startStamp = stamp;
   }
   bool restoreStartingAuxiliary(long stamp) {
-    if (_startStamp != stamp) return false;
+    if (_startStamp != stamp)
+      return false;
     _lagrangeMultiplier = _startMultiplier;
     _slackVariable = _startSlack;
     return true;

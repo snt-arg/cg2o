@@ -238,18 +238,21 @@ public:
   // vertex's estimate-data interface when a warm strategy is selected.
   template <typename T>
     requires std::is_base_of_v<g2o::OptimizableGraph::Vertex, T> &&
-             requires(T* v) { v->estimate(); v->setEstimate(v->estimate()); }
-  bool addVertex(T* v) {
-    if (!g2o::SparseOptimizer::addVertex(v)) return false;
+             requires(T *v) {
+               v->estimate();
+               v->setEstimate(v->estimate());
+             }
+  bool addVertex(T *v) {
+    if (!g2o::SparseOptimizer::addVertex(v))
+      return false;
     registerWarmStartVertex(v);
     return true;
   }
-  template <typename T> void registerWarmStartVertex(T* v);
-  bool removeVertex(g2o::HyperGraph::Vertex* v, bool detach = false) override;
-  bool removeEdge(g2o::HyperGraph::Edge* e) override;
+  template <typename T> void registerWarmStartVertex(T *v);
+  bool removeVertex(g2o::HyperGraph::Vertex *v, bool detach = false) override;
+  bool removeEdge(g2o::HyperGraph::Edge *e) override;
   void clear() override;
 
- 
   template <int D, typename E, typename... VertexTypes>
   bool addEdgeEqImpl(BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e);
   /**
@@ -434,7 +437,8 @@ public:
   //!    this made the middle strategy robust to sudden obstacles.
   //! 2: |g+s| / max(|g|, |s|, smallest normal double): a relative residual
   //!    without the unit offset. Invariant under positive constraint-row
-  //!    rescaling, away from the numerical lower bound. Useful for small bounds.
+  //!    rescaling, away from the numerical lower bound. Useful for small
+  //!    bounds.
   void setWarmStartResetTest(int test);
   int warmStartResetTest() const;
   //! 0: flagged rows centred at mu, 1: flagged rows get cold values,
@@ -498,21 +502,25 @@ public:
   // the relative gap s'lambda / (1 + |cost|), and the step sizes and
   // safeguard activity of the iteration.
   struct PointStats {
-    int iteration = -1;     //!< -1: starting point of the solve
-    int rows = 0;           //!< inequality rows m
-    double kappa = 0;       //!< barrier parameter used (target 1/kappa)
-    double mu = 0;          //!< s'lambda / m
-    double minRatio = 0;    //!< min_i s_i lambda_i / mu
-    double maxRatio = 0;    //!< max_i s_i lambda_i / mu
-    double centrality = 0;  //!< max_i |s_i lambda_i / mu - 1|
-    double relativeGap = std::numeric_limits<double>::quiet_NaN(); //!< s'lambda / (1+|F|)
-    double cost = std::numeric_limits<double>::quiet_NaN(); //!< F = chi2/2 of the linearisation point
-    double violation = std::numeric_limits<double>::quiet_NaN(); //!< max(|h|, g+), start only
-    double ineqStep = 1.0;  //!< inequality backtracking step of the iteration
-    double auxStep = 1.0;   //!< lambda/s backtracking step of the iteration
+    int iteration = -1;    //!< -1: starting point of the solve
+    int rows = 0;          //!< inequality rows m
+    double kappa = 0;      //!< barrier parameter used (target 1/kappa)
+    double mu = 0;         //!< s'lambda / m
+    double minRatio = 0;   //!< min_i s_i lambda_i / mu
+    double maxRatio = 0;   //!< max_i s_i lambda_i / mu
+    double centrality = 0; //!< max_i |s_i lambda_i / mu - 1|
+    double relativeGap =
+        std::numeric_limits<double>::quiet_NaN(); //!< s'lambda / (1+|F|)
+    double cost =
+        std::numeric_limits<double>::quiet_NaN(); //!< F = chi2/2 of the
+                                                  //!< linearisation point
+    double violation =
+        std::numeric_limits<double>::quiet_NaN(); //!< max(|h|, g+), start only
+    double ineqStep = 1.0;    //!< inequality backtracking step of the iteration
+    double auxStep = 1.0;     //!< lambda/s backtracking step of the iteration
     double appliedStep = 1.0; //!< step applied to x
-    int attempt = 0;        //!< 0 initial solve, 1 cold retry
-    int scaled = 0;         //!< lambda/s components hit by the positivity safeguard
+    int attempt = 0;          //!< 0 initial solve, 1 cold retry
+    int scaled = 0; //!< lambda/s components hit by the positivity safeguard
   };
   //! starting point of the last optimize() (computed when a warm strategy
   //! is selected or the statistics are recorded)
@@ -588,8 +596,7 @@ protected:
 
   std::unordered_map<void *, std::function<double()>> getDualityGapFunctionMap;
   // solver parameter
-  double
-      _kappa = 0.0; // initialized on every cold solve
+  double _kappa = 0.0; // initialized on every cold solve
 public:
   // clang-format off
 
@@ -747,7 +754,7 @@ protected:
   int iterate(int iterations, bool online, bool &warm_stored, bool &failed);
   void storeWarmPoint(double kappa);
   void discardVertexSnapshot(); // both snapshots
-  double dualityGapKappa(); // m / sum(s_i lambda_i) over active ineq edges
+  double dualityGapKappa();     // m / sum(s_i lambda_i) over active ineq edges
   PointStats pointStats(bool withCost); // products of the current iterate
   bool centringActive() const;
   bool inMiddleNeighbourhood(const PointStats &st) const;
@@ -776,16 +783,17 @@ protected:
   std::vector<VertexSnapshotEntry> _warm_snapshot;
   std::vector<VertexSnapshotEntry> _start_snapshot;
   using SnapshotFactory = std::function<std::function<bool()>()>;
-  std::unordered_map<g2o::OptimizableGraph::Vertex*, SnapshotFactory> _snapshot_factories;
+  std::unordered_map<g2o::OptimizableGraph::Vertex *, SnapshotFactory>
+      _snapshot_factories;
   double _start_point_kappa = 0.0;
   std::vector<std::function<void(bool, int)>> _shift_functions; // primal, n
-  std::unordered_set<void*> _shift_members;
+  std::unordered_set<void *> _shift_members;
   std::function<void()> _post_shift_callback;
   std::unordered_set<g2o::OptimizableGraph::Vertex *> _eq_multiplier_set;
-  long _solve_counter = 0;       // id of the current / last solve
-  long _warm_point_stamp = -1;   // solve that stored the warm point
-  double _warm_point_kappa = 0;  // kappa stored with the point
-  int _warm_point_source = 0;    // 1 final, 2 middle
+  long _solve_counter = 0;      // id of the current / last solve
+  long _warm_point_stamp = -1;  // solve that stored the warm point
+  double _warm_point_kappa = 0; // kappa stored with the point
+  int _warm_point_source = 0;   // 1 final, 2 middle
   bool _warm_point_valid = false;
   bool _last_converged = false;
   int _last_warm_used = 0;

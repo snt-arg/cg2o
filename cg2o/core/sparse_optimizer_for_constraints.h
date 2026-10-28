@@ -30,9 +30,13 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #ifndef G2O_GRAPH_OPTIMIZER_FOR_CONSTRAINTS_H
 #define G2O_GRAPH_OPTIMIZER_FOR_CONSTRAINTS_H
 
+#include "g2o/core/batch_stats.h"
 #include "g2o/core/g2o_core_api.h"
 #include "g2o/core/sparse_optimizer.h"
 #include "termination_criteria.h"
+#include "vertex_lagrange_multiplier.h"
+#include <functional>
+#include <unordered_map>
 
 namespace cg2o {
 
@@ -50,6 +54,18 @@ class G2O_CORE_API SparseOptimizerForConstraints : public g2o::SparseOptimizer {
 public:
   SparseOptimizerForConstraints();
   virtual ~SparseOptimizerForConstraints(); // Virtual destructor
+  // Edge callbacks capture this optimizer and cannot survive a shallow copy
+  // or move. Transfer ownership with a pointer instead.
+  SparseOptimizerForConstraints(const SparseOptimizerForConstraints &) = delete;
+  SparseOptimizerForConstraints &
+  operator=(const SparseOptimizerForConstraints &) = delete;
+  SparseOptimizerForConstraints(SparseOptimizerForConstraints &&) = delete;
+  SparseOptimizerForConstraints &
+  operator=(SparseOptimizerForConstraints &&) = delete;
+  bool removeEdge(g2o::HyperGraph::Edge *edge) override;
+  bool removeVertex(g2o::HyperGraph::Vertex *vertex,
+                    bool detach = false) override;
+  void clear() override;
 
   template <int D, typename E, typename... VertexTypes>
   bool addEdgeIneq(BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *e);
@@ -174,35 +190,56 @@ public:
   double NumInnerIterationsMax();
 
 protected:
-  std::vector<g2o::OptimizableGraph::Vertex*>
+  struct BatchStatisticsScope {
+    BatchStatisticsScope() { g2o::G2OBatchStatistics::setGlobalStats(nullptr); }
+    ~BatchStatisticsScope() {
+      g2o::G2OBatchStatistics::setGlobalStats(nullptr);
+    }
+  };
+  std::vector<g2o::OptimizableGraph::Vertex *>
       _vEqLagrangeMultipliers; // Set of Lagrangian vertices
   std::unordered_map<void *, std::function<void()>>
       updateMultipliersEqFunctionMap;
+  std::unordered_map<void *, std::function<void()>>
+      updateMultipliersIneqFunctionMap;
   TerminationCriteria _terminationCriteria; // New termination criteria object
   EdgeContainer _activeEdgesIneq; ///< sorted according to EdgeIDCompare
   std::set<OptimizableGraph::Edge *> _edgeIneqSet; // Set of inequality edges
   EdgeContainer _activeEdgesEq; ///< sorted according to EdgeIDCompare
+  EdgeContainer _fixedEdgesEq, _fixedEdgesIneq;
+  bool fixedConstraintsFeasible();
   std::set<OptimizableGraph::Edge *> _edgeEqSet; // Set of equality edges
 
   // solver parameter
   std::vector<double> _alphaBacktracking;
   double _alpha = 0.9;
 
-  double _lagrange_multiplier_initial_eq = 0.0; // Initial value for the Lagrangian
-                                          // vertex
-  int _num_inner_iterations_max = 5; // Maximum number of inner iterations for the
-                                 // AL and BIPM algorithm
+  double _lagrange_multiplier_initial_eq = 0.0; // Initial value for the
+                                                // Lagrangian vertex
+  int _num_inner_iterations_max = 5; // Maximum number of inner iterations for
+                                     // the AL and BIPM algorithm
   bool _warm_start_lagrange_multiplier_eq_flag =
       false; // Flag to indicate if the Lagrangian multiplier should be warmed
              // up
 
   void defineAlphaBacktracking(double alpha);
+  // One reusable buffer serves scaled trial and accepted primal updates.
+  Eigen::VectorXd _scaledUpdate;
+  void applyScaledUpdate(const double *update, double scale);
+  void invalidateActiveStructure();
+  // Removes one edge from the active structure, leaving it exactly as
+  // initializeOptimization() would rebuild it without that edge.
+  void removeFromActiveStructure(g2o::OptimizableGraph::Edge *edge);
+  bool attachConstraintEdge(g2o::OptimizableGraph::Edge *edge);
+  template <int D, typename E, typename... VertexTypes>
+  VertexLagrangeMultiplier<D> *
+  attachEqualityEdge(BaseFixedSizedEdgeEq<D, E, VertexTypes...> *edge);
 
   double _eq_regularization = 0.0; // see setEqualityRegularization()
   // installs the equality-edge quadratic form that applies the regularization
   template <int D, typename E, typename... VertexTypes>
-  void installEqualityQuadraticForm(
-      BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e);
+  void
+  installEqualityQuadraticForm(BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e);
 };
 
 } // namespace cg2o

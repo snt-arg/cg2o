@@ -51,6 +51,7 @@ if(NOT g2o_FOUND)
             "BUILD_TYPE=${CMAKE_BUILD_TYPE}"
             "EXTERNAL_BUILD_ROOT=${EXTERNAL_BUILD_ROOT}"
             "EXTERNAL_INSTALL_ROOT=${EXTERNAL_INSTALL_ROOT}"
+            "MARCH_NATIVE=${CG2O_G2O_MARCH_NATIVE}"
             bash "${PROJECT_ROOT}/scripts/build_g2o.sh"
         RESULT_VARIABLE G2O_BUILD_RESULT
     )

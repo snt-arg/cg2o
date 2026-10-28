@@ -34,17 +34,18 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include "g2o/stuff/timeutil.h"
 #include "optimization_algorithm.h"
 #include "solver.h"
+#include "vertex_state_guard.h"
 #include <Eigen/Core>
+#include <cmath>
 #include <iostream>
+#include <stdexcept>
 #include <vector>
 
 namespace cg2o {
 using namespace std;
 
 // Default constructor
-SparseOptimizerBIPM::SparseOptimizerBIPM() {
-  _num_inner_iterations_max = 100;
-}
+SparseOptimizerBIPM::SparseOptimizerBIPM() { _num_inner_iterations_max = 100; }
 
 // Default destructor
 SparseOptimizerBIPM::~SparseOptimizerBIPM() = default;
@@ -75,84 +76,96 @@ double SparseOptimizerBIPM::kappaUpdateFactor() const {
   return _kappa_update_factor;
 }
 
-
- 
 double SparseOptimizerBIPM::backtrackingAlgorithm(const double *update) {
-  // Initialize variables
-  size_t c = 0;
-  bool _inside_interior_flag = true;
-  bool debugFlag = false;
-
-  // Loop over all inequality edges
-  for (auto &edge : _activeEdgesIneq) {
-    // cast the edge from OptimizableGraph to BaseFixedSizedEdgeIneq
-    while (c < _alphaBacktracking.size() - 1) {
-      _inside_interior_flag = true;
-      // 1- Scale the update and apply it to the vertices
-      updateEdgeVertices(edge, update, _alphaBacktracking[c]);
-
-      // 2- Check if the inequality constraint is satisfied
-      edge->computeError();
-      auto error = edge->errorData();
-
-      // 3- Reverse the update and apply it to the vertices
-      updateEdgeVertices(edge, update, -_alphaBacktracking[c]);
-
-      // 4- Check if the inequality constraint is satisfied
-      for (int i = 0; i < edge->dimension(); ++i) {
-        if (error[i] > 0) {
-          _inside_interior_flag = false;
-          if (debugFlag) {
-            std::cout << "-----------------------------------------------------"
-                         "------------"
-                      << endl;
-            std::cout << " The inequality constraint is not satisfied at c = "
-                      << c << endl;
-          }
-          break;
-        }
-      }
-
-      // 5- Break if the inequality constraint is satisfied
-      if (_inside_interior_flag)
+  // Recheck all rows for each candidate: nonlinear feasible sets need not
+  // remain feasible when a step accepted for an earlier edge is shortened.
+  if (_activeEdgesIneq.empty())
+    return 1.0;
+  // true if all rows of the edge are strictly negative after the trial step;
+  // the vertices are restored exactly when the guard goes out of scope
+  auto feasibleAt = [&](OptimizableGraph::Edge *edge, double step) {
+    internal::VertexStateGuard trial(edge->vertices());
+    updateEdgeVertices(edge, update, step);
+    edge->computeError();
+    for (int i = 0; i < edge->dimension(); ++i)
+      if (!(edge->errorData()[i] < 0.0) || !std::isfinite(edge->errorData()[i]))
+        return false;
+    return true;
+  };
+  // The edge that rejected the previous step usually rejects the next one
+  // too, so it is tested first: a rejected step then costs about one test.
+  // The accepted step is unchanged: the first one feasible for all edges.
+  const std::size_t numEdges = _activeEdgesIneq.size();
+  std::size_t lastFailed = 0;
+  double accepted = 0.0;
+  for (double step : _alphaBacktracking) {
+    if (!feasibleAt(_activeEdgesIneq[lastFailed], step))
+      continue;
+    bool feasible = true;
+    for (std::size_t k = 0; k < numEdges; ++k) {
+      if (k == lastFailed)
+        continue;
+      if (!feasibleAt(_activeEdgesIneq[k], step)) {
+        lastFailed = k;
+        feasible = false;
         break;
-
-      // 6- Increment the step size index if the inequality constraint is not
-      // satisfied
-      ++c;
+      }
+    }
+    if (feasible) {
+      accepted = step;
+      break;
     }
   }
+  // Refresh caches once after the search, with the original vertices restored.
+  for (auto *edge : _activeEdgesIneq)
+    edge->computeError();
+  return accepted;
+}
 
-  return _alphaBacktracking[c]; // Return the index of _alphaBacktracking for
-                                // the corresponding successful step size
+bool SparseOptimizerBIPM::strictlyInterior() {
+  for (auto *edge : _activeEdgesIneq) {
+    edge->computeError();
+    for (int i = 0; i < edge->dimension(); ++i)
+      if (!(edge->errorData()[i] < 0.0) || !std::isfinite(edge->errorData()[i]))
+        return false;
+  }
+  return true;
 }
 
 void SparseOptimizerBIPM::update(const double *update) {
 
-  g2o::OptimizationAlgorithmWithHessian *algorithm =
-      static_cast<g2o::OptimizationAlgorithmWithHessian *>(_algorithm);
-  size_t xSize = algorithm->solver().vectorSize();
-
-  Eigen::Map<const Eigen::VectorXd> updateVec(update, xSize);
-
-  // 1- find the scaling index for the scaling factors vector _alphaBacktracking
-  double scaleFactor = backtrackingAlgorithm(update);
-  Eigen::VectorXd scaledUpdateVec;
-  const double *requiredUpdate = nullptr;
-  // 2- Calculate the required update step
-  if (scaleFactor == 1) { // No scaling required
-    requiredUpdate = update;
-  } else {
-    scaledUpdateVec = scaleFactor * updateVec;
-    requiredUpdate = scaledUpdateVec.data();
+  const double step = backtrackingAlgorithm(update);
+  if (step == 0.0) {
+    G2O_WARN("BIPM backtracking found no step that keeps the inequality "
+             "constraints strictly feasible");
+    _barrier_step_failed = true;
+    return;
   }
-
-  // 3- Update the decision variables
-  SparseOptimizer::update(requiredUpdate);
+  applyScaledUpdate(update, step);
 }
 
 int SparseOptimizerBIPM::optimize(int iterations, bool online) {
   using namespace g2o;
+  BatchStatisticsScope statisticsScope;
+  if (iterations < 0)
+    throw std::invalid_argument("iteration budget must be nonnegative");
+  if (iterations == 0 || terminate())
+    return 0;
+  if (!fixedConstraintsFeasible()) {
+    G2O_WARN("constraints on fixed vertices are violated, nothing to "
+             "optimize");
+    return 0;
+  }
+  if (!(_kappa_initial > 0) || !std::isfinite(_kappa_initial) ||
+      !(_kappa_final >= _kappa_initial) || !std::isfinite(_kappa_final) ||
+      !(_kappa_update_factor > 1) || !std::isfinite(_kappa_update_factor))
+    throw std::invalid_argument("invalid BIPM barrier settings");
+  if (!strictlyInterior()) {
+    G2O_WARN("BIPM needs a strictly feasible starting point (all inequality "
+             "constraints < 0)");
+    return 0;
+  }
+  _barrier_step_failed = false;
 
   if (_ivMap.size() == 0) {
     G2O_WARN("0 vertices to optimize, maybe forgot to call "
@@ -187,10 +200,6 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
     this->setKappa(_kappa_final);
   }
 
-  if (_kappa_update_factor <= 1) {
-    std::cerr << "[WARNING] Value of_nu = " << _kappa_update_factor
-              << "; It should be greater than 1." << std::endl;
-  }
   while (!outerLoopStop) {
 
     int i = 0;
@@ -209,7 +218,9 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
 
       double ts = get_monotonic_time();
       result = _algorithm->solve(cjIterations, online);
-      ok = (result == OptimizationAlgorithm::OK);
+      ok = (result == OptimizationAlgorithm::OK) && !_barrier_step_failed;
+      if (_barrier_step_failed)
+        result = OptimizationAlgorithm::Fail;
 
       bool errorComputed = false;
       if (_computeBatchStatistics) {

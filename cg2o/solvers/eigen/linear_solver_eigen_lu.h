@@ -41,6 +41,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include "g2o/stuff/logger.h"
 #include "g2o/stuff/timeutil.h"
 
+#include <algorithm>
+
 namespace cg2o {
 
 /**
@@ -68,6 +70,17 @@ public:
 
   virtual bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
                      double *b) override {
+    if (A.rows() == 0)
+      return true;
+    if (A.rows() == A.cols() && solveImpl(A, x, b))
+      return true;
+    std::fill(x, x + A.cols(), 0.0);
+    return false;
+  }
+
+protected:
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+                 double *b) {
     using namespace g2o;
     double t;
     if (!computeLU(A, t))
@@ -78,7 +91,7 @@ public:
     VectorX::ConstMapType bb(b, _sparseMatrix.cols());
     xx = _lu.solve(bb);
 
-    if (_lu.info() != Eigen::Success) {
+    if (_lu.info() != Eigen::Success || !xx.allFinite()) {
       G2O_ERROR("LU solve failed.");
       return false;
     }
@@ -161,20 +174,9 @@ protected:
       const g2o::SparseBlockMatrix<MatrixType> &A,
       std::function<void(g2o::MarginalCovarianceCholesky &)> /*compute*/)
       override {
-    double t;
-    if (!computeLU(A, t))
-      return false;
-
-    g2o::MarginalCovarianceCholesky mcc;
-
-    // mcc.setCholeskyFactor(
-    //    _lu.matrixL().rows(),
-    //   const_cast<int*>(_lu.matrixL().outerIndexPtr()),
-    //  const_cast<int*>(_lu.matrixL().innerIndexPtr()),
-    // const_cast<double*>(_lu.matrixL().valuePtr()),
-    //    nullptr);  // No explicit permutation available
-    //  compute(mcc);
-    return true;
+    (void)A;
+    // No covariance factor/callback is supplied by this backend.
+    return false;
   }
 };
 

@@ -59,8 +59,8 @@ public:
   // Upper: g2o fills only the upper triangle, so Eigen can use it directly.
   // (With the default Lower, passing selfadjointView<Upper>() made Eigen build
   // a temporary full copy of the matrix on every factorization.)
-  using ldltDecomposition =
-      Eigen::SimplicialLDLT<SparseMatrix, Eigen::Upper, Eigen::AMDOrdering<int>>;
+  using ldltDecomposition = Eigen::SimplicialLDLT<SparseMatrix, Eigen::Upper,
+                                                  Eigen::AMDOrdering<int>>;
 
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -73,6 +73,17 @@ public:
 
   virtual bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
                      double *b) override {
+    if (A.rows() == 0)
+      return true;
+    if (A.rows() == A.cols() && solveImpl(A, x, b))
+      return true;
+    std::fill(x, x + A.cols(), 0.0);
+    return false;
+  }
+
+protected:
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+                 double *b) {
     using namespace g2o;
     double t;
     // g2o's GN/LM apply the update vector even when solve() fails, so a
@@ -87,7 +98,7 @@ public:
     VectorX::ConstMapType bb(b, _sparseMatrix.cols());
     xx = _ldlt.solve(bb);
 
-    if (_ldlt.info() != Eigen::Success) {
+    if (_ldlt.info() != Eigen::Success || !xx.allFinite()) {
       G2O_ERROR("LDLT solve failed.");
       xx.setZero();
       return false;

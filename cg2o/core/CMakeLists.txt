@@ -30,6 +30,7 @@ target_include_directories(core PUBLIC
 target_link_libraries(core PUBLIC
    g2o::core ${CG2O_EIGEN3_EIGEN_TARGET}
    g2o::stuff
+   OpenMP::OpenMP_CXX
 )
 
 set_target_properties(core PROPERTIES 

@@ -2,8 +2,6 @@
 Contributed to cg2o; distributed under the same BSD 3-Clause license as the
 rest of the library (see the header of linear_solver_eigen_ldlt.h).
 */
-
- 
 #ifndef CG2O_LINEAR_SOLVER_EIGEN_QDLDLT_H
 #define CG2O_LINEAR_SOLVER_EIGEN_QDLDLT_H
 
@@ -14,6 +12,7 @@ rest of the library (see the header of linear_solver_eigen_ldlt.h).
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 
 #include "g2o/core/batch_stats.h"
@@ -25,65 +24,52 @@ rest of the library (see the header of linear_solver_eigen_ldlt.h).
 namespace cg2o {
 
 /**
- * \brief Sparse LDL^T solver (Eigen SimplicialLDLT, AMD ordering) for any g2o
- * problem, with optional quasi-definite regularization for KKT systems.
+ * Sparse LDL^T with optional diagonal regularization, iterative refinement,
+ * and a residual-verified SparseLU fallback. Header-only; Eigen and g2o only.
  *
- * Header-only; depends only on Eigen and g2o. Works with BlockSolverX and the
- * fixed-size block solvers, with or without the Schur complement.
+ * The incoming matrix K is stored as its upper triangle. Exactly-zero stored
+ * diagonal entries receive -delta, forming K_reg = K + R. This assumes that
+ * such entries belong to dual variables; it does not make an arbitrary
+ * indefinite matrix quasi-definite. In a KKT system, quasi-definiteness also
+ * requires a positive-definite primal block and negative-definite dual block.
+ * Any regularization already applied by the caller remains part of K.
  *
- * SPD systems (pose graphs, bundle adjustment, cg2o AL, unconstrained):
- *   no diagonal entry is zero, nothing is regularized and no refinement is
- *   done, so this is a plain simplicial LDL^T. Marginal covariances
- *   (SparseOptimizer::computeMarginals) are supported for SPD systems.
+ * Accuracy is measured against K, removing only this solver's own R:
+ *     ||b - K*x||_inf <= fallbackAbsoluteTolerance()
+ *                       + fallbackTolerance() * ||b||_inf.
+ * Default: relative tolerance 1e-8, absolute tolerance 0. Setting the relative
+ * tolerance to 0 explicitly disables verification AND the LU fallback. In
+ * that mode, finite LDL^T iterates are accepted after optional refinement.
  *
- * KKT systems (cg2o ISPD/BIPM, where the equality multipliers are vertices):
+ * Refinement corrections are enabled after internal regularization, while
+ * verification is enabled (fallbackTolerance() > 0, the default), or by
+ * setAlwaysRefine(true). The same current residual serves refinement and
+ * verification. Correction iterates are accepted only if their residual is
+ * finite and strictly decreases. The final step is never reported successful
+ * with an excessive residual when verification is enabled.
  *
- *     [ H   J^T ]
- *     [ J   0   ]
+ * LDL^T symbolic analysis and the pre-permuted value map are reused while the
+ * upper-triangle pattern stays fixed. The full symmetric LU pattern and its
+ * upper-to-full value map are built lazily on the first fallback and reused.
+ * LU numeric factorization is repeated whenever fallback is needed: changing
+ * matrix values must not reuse old numeric factors. No values are pruned.
  *
- *   is symmetric indefinite: Cholesky (g2o's Eigen/CSparse/CHOLMOD-supernodal
- *   solvers) cannot factor it and LU (UMFPACK, PARDISO-LU) ignores the
- *   symmetry. Two ways to use this solver:
- *   1. Let the solver regularize: every diagonal entry that is exactly zero
- *      gets -delta (default 1e-9). The matrix is then symmetric
- *      quasi-definite, which has an LDL^T factorization for any symmetric
- *      ordering (Vanderbei 1995). Adaptive iterative refinement against the
- *      unregularized matrix removes the bias of delta.
- *   2. Let the equality edges regularize (optimizer->setEqualityRegularization
- *      or edge->setDualRegularization): the matrix arrives as
- *      [H J^T; J -sigma I], nothing is zero, and the solver only factors it.
+ * Call init() whenever the sparsity pattern changes, including changes with
+ * the same size and number of entries. Dimension changes are also detected
+ * automatically. Instances are stateful and not thread-safe.
  *
- * The fill-reducing ordering and symbolic factorization are computed once and
- * kept across optimize() calls while the sparsity pattern is unchanged (g2o
- * calls init() at every optimize(); in MPC the pattern never changes). The
- * numeric factorization runs on a cached, pre-permuted copy of the matrix
- * (setPrePermutedFactorization, default on; bit-identical results).
- *
- * Assumption for mode 1: an exactly-zero diagonal entry belongs to a dual
- * (multiplier) variable. A primal variable without any cost term (zero
- * diagonal) would also receive -delta; give it a small prior instead.
- * No pivoting is done: for indefinite matrices that are not quasi-definite
- * use LinearSolverPardisoFast (Bunch-Kaufman) or LinearSolverUmfpackFast.
- *
- * Accuracy control (per solve, one residual computation serves refinement and check). Because there is no pivoting and the
- * regularization perturbs the matrix, a solve can be INEXACT when the system is badly conditioned (huge barrier entries,
- * nearly dependent constraints): refinement then stalls and the returned step does not solve K x = b (measured on the MACC
- * ISPD problem: relative residuals 1e-5 .. 1e+2 in about 0.5 % of the solves, which made the interior-point iteration run to
- * its iteration limit). The solve therefore is:
- *     x = LDL^T solve;  r = b - K x            (K = the UNREGULARIZED matrix)
- *     while |r| > refinementTolerance*|b| and refinement is still contracting (<= refinementSteps corrections):
- *         x += LDL^T solve(r);  r = b - K x     (existing factors, no new factorization)
- *     if |r| > fallbackTolerance*|b|:          (default 1e-8; 0 disables the fallback)
- *         x_lu = pivoted sparse LU solve of K;   keep x_lu if its residual is smaller, count it as inaccurate if still > tol
- * A solve that is already accurate costs one residual (a sparse matrix-vector product) and no correction.
+ * A failed solve zeros x, because some g2o optimizers can apply x even after
+ * a false return. x and b must be distinct nonoverlapping arrays. SPD marginal
+ * covariances continue to use LDL^T and do not use the LU fallback.
  */
 template <typename MatrixType>
 class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
- public:
+public:
   using SparseMatrix = Eigen::SparseMatrix<double, Eigen::ColMajor, int>;
-  using DecompositionBase =
-      Eigen::SimplicialLDLT<SparseMatrix, Eigen::Upper, Eigen::AMDOrdering<int>>;
-
+  using DecompositionBase = Eigen::SimplicialLDLT<SparseMatrix, Eigen::Upper,
+                                                  Eigen::AMDOrdering<int>>;
+  using VectorMap = Eigen::Map<Eigen::VectorXd>;
+  using ConstVectorMap = Eigen::Map<const Eigen::VectorXd>;
   /**
    * SimplicialLDLT whose numeric factorization starts from a cached,
    * already permuted copy of the matrix.
@@ -92,17 +78,21 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
    * pattern work, a column count and an allocation) at EVERY call although the
    * sparsity pattern is fixed between calls. In the closed-loop NMPC profile of
    * the px4 slalom this copy was 13 % of the linear solve (7.7 % of all
-   * instructions of a solve). Here the map "entry of P A P^T -> entry of A" is
-   * built once after analyzePattern() and the numbers are scattered through it;
-   * the factorization itself then runs on the permuted matrix directly
-   * (factorize_preordered). The result is bit-identical.
+   * instructions of a solve).
+   *
+   * Cache the sparsity pattern of P A P^T and copy only numeric entries
+   * before factorize_preordered(). This preserves Eigen's symbolic ordering.
+   * This optional fast path uses protected Eigen internals: test it with the
+   * Eigen version used by the application. setPrePermutedFactorization(false)
+   * selects the public Eigen factorize() path instead.
    */
   class Decomposition : public DecompositionBase {
-   public:
+  public:
     //! to be called after analyzePattern(A); A must keep its pattern afterwards
-    void buildPermutationMap(const SparseMatrix& A) {
+    void buildPermutationMap(const SparseMatrix &A) {
       _haveMap = false;
-      if (this->m_P.size() == 0) return;  // no ordering: stock path
+      if (this->m_P.size() == 0)
+        return; // no ordering: stock path
       SparseMatrix idx = A;
       for (Eigen::Index k = 0; k < idx.nonZeros(); ++k)
         idx.valuePtr()[k] = static_cast<double>(k + 1);
@@ -114,25 +104,29 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
         _map[k] = static_cast<int>(_permuted.valuePtr()[k]) - 1;
       _haveMap = true;
     }
-    //! numeric factorization of A, which has the pattern given to buildPermutationMap()
-    void factorizeFast(const SparseMatrix& A) {
-      if (!_haveMap || _permuted.nonZeros() != static_cast<Eigen::Index>(_map.size())) {
+    //! numeric factorization of A, which has the pattern given to
+    //! buildPermutationMap()
+    void factorizeFast(const SparseMatrix &A) {
+      if (!_haveMap ||
+          _permuted.nonZeros() != static_cast<Eigen::Index>(_map.size())) {
         this->factorize(A);
         return;
       }
-      const double* v = A.valuePtr();
-      double* pv = _permuted.valuePtr();
-      const int* m = _map.data();
+      const double *v = A.valuePtr();
+      double *pv = _permuted.valuePtr();
+      const int *m = _map.data();
       const Eigen::Index nz = _permuted.nonZeros();
-      for (Eigen::Index k = 0; k < nz; ++k) pv[k] = v[m[k]];
-#if EIGEN_VERSION_AT_LEAST(3, 4, 90)  // Eigen master: factorize_preordered<DoLDLT, NonHermitian>
+      for (Eigen::Index k = 0; k < nz; ++k)
+        pv[k] = v[m[k]];
+#if EIGEN_VERSION_AT_LEAST(3, 4, 90)
+      // Eigen master: factorize_preordered<DoLDLT, NonHermitian>
       this->template factorize_preordered<true, false>(_permuted);
 #else
       this->template factorize_preordered<true>(_permuted);
 #endif
     }
 
-   private:
+  private:
     SparseMatrix _permuted;
     std::vector<int> _map;
     bool _haveMap = false;
@@ -141,163 +135,325 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   LinearSolverEigenQDLDLT() : g2o::LinearSolverCCS<MatrixType>() {}
   LinearSolverEigenQDLDLT(double delta, bool refine, int steps)
-      : g2o::LinearSolverCCS<MatrixType>(), _delta(delta),
-        _alwaysRefine(refine), _refinementSteps(steps) {}
+      : LinearSolverEigenQDLDLT() {
+    setDualRegularization(delta);
+    setAlwaysRefine(refine);
+    setRefinementSteps(steps);
+  }
   LinearSolverEigenQDLDLT(double delta, bool refine)
-      : g2o::LinearSolverCCS<MatrixType>(), _delta(delta),
-        _alwaysRefine(refine) {} 
+      : LinearSolverEigenQDLDLT(delta, refine, 5) {}
 
   bool init() override {
-    _init = true;  // pattern is re-checked; symbolic kept if unchanged
+    _init = true;
     return true;
   }
 
-  //! value put on exactly-zero diagonal entries as -delta (default 1e-9);
-  //! 0 disables the regularization
-  void setDualRegularization(double delta) { _delta = delta; }
+  void setDualRegularization(double delta) {
+    requireNonnegativeFinite(delta, "dual regularization");
+    _delta = delta;
+  }
   double dualRegularization() const { return _delta; }
-  //! maximum iterative-refinement steps (default 5). Refinement runs only when
-  //! entries were regularized (or always, see setAlwaysRefine) and stops once
-  //! max|b - K x| <= tol * max|b| or the residual stops shrinking. One fixed
-  //! step is not always enough: on ill-conditioned KKT matrices (large barrier
-  //! weights) each step removes only a factor delta / (lambda_min + delta) of
-  //! the bias, lambda_min being the smallest eigenvalue of J H^-1 J^T.
-  void setRefinementSteps(int steps) { _refinementSteps = steps; }
+  //! maximum iterative-refinement steps (default 5). One fixed step is not
+  //! always enough: on ill-conditioned KKT matrices (large barrier weights)
+  //! each step removes only a factor delta / (lambda_min + delta) of the bias,
+  //! lambda_min being the smallest eigenvalue of J H^-1 J^T.
+  void setRefinementSteps(int steps) {
+    if (steps < 0)
+      throw std::invalid_argument("negative refinement steps");
+    _refinementSteps = steps;
+  }
   int refinementSteps() const { return _refinementSteps; }
-  //! stop refining once max|b - K x| <= tol * max|b| (default 1e-12)
-  void setRefinementTolerance(double tol) { _refinementTol = tol; }
+  void setRefinementTolerance(double tol) {
+    requireNonnegativeFinite(tol, "refinement tolerance");
+    _refinementTol = tol;
+  }
   double refinementTolerance() const { return _refinementTol; }
-  //! also refine when nothing was regularized (removes rounding error of the
-  //! factorization; costs at least one sparse product per solve). Default off.
   void setAlwaysRefine(bool always) { _alwaysRefine = always; }
   bool alwaysRefine() const { return _alwaysRefine; }
-  //! factorize on a cached pre-permuted copy of the matrix (default on, bit-identical
-  //! to Eigen's own factorize(), but skips rebuilding P A P^T at every call)
   void setPrePermutedFactorization(bool on) { _prePermuted = on; }
   bool prePermutedFactorization() const { return _prePermuted; }
-  //! refinement steps taken in the last solve
-  int lastRefinementSteps() const { return _lastRefinementSteps; }
-  //! relative residual |b - K x|_inf / |b|_inf above which a solve is repeated with a pivoted sparse LU (0 = never)
-  void setFallbackTolerance(double tol) { _fallbackTol = tol; }
+  void setFallbackTolerance(double tol) {
+    requireNonnegativeFinite(tol, "fallback tolerance");
+    _fallbackTol = tol;
+  }
   double fallbackTolerance() const { return _fallbackTol; }
-  //! total solves, solves repeated with LU, and solves that stayed above fallbackTolerance() even after the LU
-  long solveCount() const { return _solveCount; }
-  long fallbackCount() const { return _fallbackCount; }
-  long inaccurateCount() const { return _inaccurateCount; }
-  //! diagonal entries that received -delta in the last factorization
-  int lastRegularizedCount() const { return _numRegularized; }
+  //! false (default): when neither LDL^T nor the LU reaches the tolerance, the
+  //! answer with the smaller residual is returned as the step and
+  //! inaccurateCount() is incremented; true: such a solve fails (x = 0, returns
+  //! false)
+  void setFailOnInaccurate(bool fail) { _failOnInaccurate = fail; }
+  bool failOnInaccurate() const { return _failOnInaccurate; }
+  void setFallbackAbsoluteTolerance(double tol) {
+    requireNonnegativeFinite(tol, "fallback absolute tolerance");
+    _fallbackAbsTol = tol;
+  }
+  double fallbackAbsoluteTolerance() const { return _fallbackAbsTol; }
 
-  // g2o's GN/LM apply the update vector even when solve() fails, so a
-  // failed solve leaves x = 0 (no step) instead of stale values.
-  bool solve(const g2o::SparseBlockMatrix<MatrixType>& A, double* x,
-             double* b) override {
-    if (!factorize(A)) {
-      std::fill(x, x + A.rows(), 0.0);
-      return false;
-    }
-    const double t = g2o::get_monotonic_time();
-    Eigen::Map<Eigen::VectorXd> xx(x, _sparseMatrix.cols());
-    Eigen::Map<const Eigen::VectorXd> bb(b, _sparseMatrix.cols());
-    xx = _ldlt.solve(bb);
-    _lastRefinementSteps = 0;
+  //! Attempted corrections, including a correction rejected for no improvement.
+  int lastRefinementSteps() const { return _lastRefinementSteps; }
+  int lastRegularizedCount() const { return _numRegularized; }
+  //! All solve calls; solves whose answer came from the LU fallback (verified,
+  //! or kept because it beat the LDL^T answer); LU attempts; verified LU
+  //! successes; LU attempts that did not reach the tolerance.
+  long solveCount() const { return _solveCount; }
+  long fallbackCount() const { return _fallbackUsedCount; }
+  long fallbackAttemptCount() const { return _fallbackAttemptCount; }
+  long fallbackSuccessCount() const { return _fallbackSuccessCount; }
+  long fallbackFailureCount() const {
+    return _fallbackAttemptCount - _fallbackSuccessCount;
+  }
+  long failedSolveCount() const { return _failedSolveCount; }
+  //! Calls rejected for excessive/nonfinite residual, including failed LU
+  //! recovery.
+  long inaccurateCount() const { return _inaccurateCount; }
+  bool lastUsedFallback() const { return _lastUsedFallback; }
+  //! Best candidate residual before failure zeroing; NaN if it was not
+  //! measured.
+  double lastResidualNorm() const { return _lastResidualNorm; }
+  double lastRelativeResidual() const { return _lastRelativeResidual; }
+  long residualEvaluationCount() const { return _residualEvaluations; }
+  long luAnalysisCount() const { return _luAnalysisCount; }
+  long luPatternBuildCount() const { return _luPatternBuildCount; }
+
+  bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+             double *b) override {
     ++_solveCount;
-    if (_fallbackTol > 0.0 || _numRegularized > 0 || _alwaysRefine) refineAndCheck(xx, bb);
-    if (!xx.allFinite()) {
-      G2O_ERROR("QDLDLT solve produced non-finite values");
-      xx.setZero();
-      return false;
+    _lastRefinementSteps = 0;
+    _lastUsedFallback = false;
+    _lastResidualNorm = _lastRelativeResidual =
+        std::numeric_limits<double>::quiet_NaN();
+    const int n = A.rows();
+    if (n != A.cols() || n < 0 || (n > 0 && (!x || !b || x == b)))
+      return fail(x, n);
+    if (n == 0) {
+      _lastResidualNorm = _lastRelativeResidual = 0.0;
+      return true;
     }
-    g2o::G2OBatchStatistics* globalStats =
-        g2o::G2OBatchStatistics::globalStats();
-    if (globalStats) {
-      globalStats->timeNumericDecomposition += g2o::get_monotonic_time() - t;
-      globalStats->choleskyNNZ = _ldlt.matrixL().nestedExpression().nonZeros();
+    VectorMap xx(x, n);
+    ConstVectorMap bb(b, n);
+    if (!bb.allFinite())
+      return fail(x, n);
+    const double normB = bb.cwiseAbs().maxCoeff();
+    const bool ldltOK = factorize(A);
+    const double t = g2o::get_monotonic_time();
+    bool success = false;
+    if (ldltOK) {
+      xx = _ldlt.solve(bb);
+      if (_fallbackTol > 0.0 || _numRegularized > 0 || _alwaysRefine)
+        success = refineAndCheck(xx, bb, normB);
+      else
+        success = xx.allFinite();
+    } else if (_matrixReady && _fallbackTol > 0.0) {
+      // Assembly succeeded but numeric LDL^T failed. No LDL^T solve/refinement.
+      recordResidual(std::numeric_limits<double>::infinity(), normB);
+      success = solveWithLU(xx, bb, normB);
+      if (!success) {
+        ++_inaccurateCount;
+        success = !_failOnInaccurate && std::isfinite(_lastResidualNorm) &&
+                  xx.allFinite() &&
+                  _lastResidualNorm < std::numeric_limits<double>::infinity();
+      }
     }
+    g2o::G2OBatchStatistics *stats = g2o::G2OBatchStatistics::globalStats();
+    if (stats) {
+      stats->timeNumericDecomposition += g2o::get_monotonic_time() - t;
+      if (success)
+        stats->choleskyNNZ =
+            _lastUsedFallback ? _lu.nnzL() + _lu.nnzU()
+                              : _ldlt.matrixL().nestedExpression().nonZeros();
+    }
+    if (!success)
+      return fail(x, n);
     return true;
   }
 
- protected:
+protected:
   bool _init = true;
   bool _analyzed = false;
+  bool _matrixReady = false;
   bool _alwaysRefine = false;
   bool _prePermuted = true;
+  bool _failOnInaccurate = false;
   double _delta = 1e-9;
   int _refinementSteps = 5;
   double _refinementTol = 1e-12;
   int _lastRefinementSteps = 0;
   int _numRegularized = 0;
   double _fallbackTol = 1e-8;
-  long _fallbackCount = 0;
+  double _fallbackAbsTol = 0.0;
+  long _fallbackUsedCount = 0;
+  long _fallbackAttemptCount = 0;
+  long _fallbackSuccessCount = 0;
+  long _failedSolveCount = 0;
   long _inaccurateCount = 0;
   long _solveCount = 0;
+  long _residualEvaluations = 0;
+  long _luAnalysisCount = 0;
+  long _luPatternBuildCount = 0;
+  bool _lastUsedFallback = false;
+  double _lastResidualNorm = std::numeric_limits<double>::quiet_NaN();
+  double _lastRelativeResidual = std::numeric_limits<double>::quiet_NaN();
   bool _luAnalyzed = false;
+  bool _fullPatternReady = false;
   Eigen::SparseLU<SparseMatrix, Eigen::COLAMDOrdering<int>> _lu;
   SparseMatrix _fullMatrix;
-  SparseMatrix _sparseMatrix;  // upper triangle, as filled by g2o
+  std::vector<int> _fullToUpper, _fullDiag;
+  SparseMatrix _sparseMatrix;
   Decomposition _ldlt;
-  std::vector<int> _diagIndex;      // position of each diagonal entry
-  Eigen::VectorXd _regularization;  // -delta where applied, else 0
-  Eigen::VectorXd _residual;
+  std::vector<int> _diagIndex;
+  Eigen::VectorXd _regularization, _residual, _candidate, _candidateResidual;
   std::vector<int> _patternOuter, _patternInner;
 
-  //! |b - K x|_inf for the UNREGULARIZED K = K_reg - R (also stored in _residual)
-  double residualNorm(const Eigen::Map<Eigen::VectorXd>& xx,
-                      const Eigen::Map<const Eigen::VectorXd>& bb) {
-    _residual = bb - (_sparseMatrix.template selfadjointView<Eigen::Upper>() * xx -
-                      _regularization.cwiseProduct(xx));
-    return _residual.cwiseAbs().maxCoeff();
+  static void requireNonnegativeFinite(double value, const char *name) {
+    if (!std::isfinite(value) || value < 0.0)
+      throw std::invalid_argument(name);
   }
 
-  //! x = pivoted sparse LU solve of the unregularized, full symmetric K (false, x untouched, if the LU fails)
-  bool solveWithLU(Eigen::Map<Eigen::VectorXd>& xx,
-                   const Eigen::Map<const Eigen::VectorXd>& bb) {
-    _fullMatrix = _sparseMatrix.template selfadjointView<Eigen::Upper>();
-    for (int c = 0; c < static_cast<int>(_diagIndex.size()); ++c)
-      if (_regularization[c] != 0.0) _fullMatrix.coeffRef(c, c) -= _regularization[c];
+  bool fail(double *x, int n) {
+    if (x && n > 0)
+      std::fill(x, x + n, 0.0);
+    ++_failedSolveCount;
+    return false;
+  }
+
+  void recordResidual(double rn, double normB) {
+    _lastResidualNorm = rn;
+    _lastRelativeResidual =
+        normB > 0.0
+            ? rn / normB
+            : (rn == 0.0 ? 0.0 : std::numeric_limits<double>::infinity());
+  }
+
+  bool acceptable(double rn, double normB) const {
+    // Long double prevents overflow of tol*normB from silently accepting inf.
+    return std::isfinite(rn) && static_cast<long double>(rn) <=
+                                    static_cast<long double>(_fallbackAbsTol) +
+                                        static_cast<long double>(_fallbackTol) *
+                                            static_cast<long double>(normB);
+  }
+
+  template <typename Derived>
+  double residualNorm(const Eigen::MatrixBase<Derived> &candidate,
+                      const ConstVectorMap &bb, Eigen::VectorXd &residual) {
+    ++_residualEvaluations;
+    if (!candidate.allFinite())
+      return std::numeric_limits<double>::infinity();
+    residual.noalias() =
+        _sparseMatrix.template selfadjointView<Eigen::Upper>() * candidate;
+    residual.array() -= _regularization.array() * candidate.array();
+    residual = bb - residual;
+    if (!residual.allFinite())
+      return std::numeric_limits<double>::infinity();
+    return residual.cwiseAbs().maxCoeff();
+  }
+
+  bool refineAndCheck(VectorMap &xx, const ConstVectorMap &bb, double normB) {
+    double rn = residualNorm(xx, bb, _residual);
+    // also refine unregularized (e.g. SPD) systems while verification is on;
+    // an accurate answer stops the loop before any correction
+    const bool allowRefinement =
+        _numRegularized > 0 || _alwaysRefine || _fallbackTol > 0.0;
+    if (allowRefinement && std::isfinite(rn)) {
+      for (int k = 0; k < _refinementSteps; ++k) {
+        if (static_cast<long double>(rn) <=
+            static_cast<long double>(_refinementTol) * normB)
+          break;
+        _candidate = _ldlt.solve(_residual);
+        _candidate += xx;
+        ++_lastRefinementSteps;
+        const double next = residualNorm(_candidate, bb, _candidateResidual);
+        if (!std::isfinite(next) || !(next < rn))
+          break;
+        xx = _candidate;
+        _residual.swap(_candidateResidual);
+        rn = next;
+      }
+    }
+    recordResidual(rn, normB);
+    if (_fallbackTol == 0.0)
+      return xx.allFinite();
+    if (acceptable(rn, normB))
+      return true;
+    if (solveWithLU(xx, bb, normB, rn))
+      return true;
+    ++_inaccurateCount;
+    return !_failOnInaccurate && xx.allFinite();
+  }
+
+  void buildFullPattern() {
+    // Index tags preserve explicit zeros and avoid coeffRef()/insertion later.
+    SparseMatrix tags = _sparseMatrix;
+    for (Eigen::Index i = 0; i < tags.nonZeros(); ++i)
+      tags.valuePtr()[i] = static_cast<double>(i + 1);
+    _fullMatrix = tags.template selfadjointView<Eigen::Upper>();
+    _fullMatrix.makeCompressed();
+    _fullToUpper.resize(_fullMatrix.nonZeros());
+    _fullDiag.assign(_fullMatrix.cols(), -1);
+    for (int c = 0; c < _fullMatrix.cols(); ++c) {
+      for (int i = _fullMatrix.outerIndexPtr()[c];
+           i < _fullMatrix.outerIndexPtr()[c + 1]; ++i) {
+        _fullToUpper[i] = static_cast<int>(_fullMatrix.valuePtr()[i]) - 1;
+        if (_fullMatrix.innerIndexPtr()[i] == c)
+          _fullDiag[c] = i;
+      }
+    }
+    _fullPatternReady = true;
+    _luAnalyzed = false;
+    ++_luPatternBuildCount;
+  }
+
+  bool solveWithLU(
+      VectorMap &xx, const ConstVectorMap &bb, double normB,
+      double currentResidual = std::numeric_limits<double>::infinity()) {
+    ++_fallbackAttemptCount;
+    if (!_fullPatternReady)
+      buildFullPattern();
+    const double *source = _sparseMatrix.valuePtr();
+    double *dest = _fullMatrix.valuePtr();
+    for (Eigen::Index i = 0; i < _fullMatrix.nonZeros(); ++i)
+      dest[i] = source[_fullToUpper[i]];
+    for (int c = 0; c < static_cast<int>(_fullDiag.size()); ++c)
+      if (_fullDiag[c] >= 0)
+        dest[_fullDiag[c]] -= _regularization[c];
     if (!_luAnalyzed) {
       _lu.analyzePattern(_fullMatrix);
       _luAnalyzed = true;
+      ++_luAnalysisCount;
     }
     _lu.factorize(_fullMatrix);
-    if (_lu.info() != Eigen::Success) return false;
-    const Eigen::VectorXd y = _lu.solve(bb);
-    if (!y.allFinite()) return false;
-    xx = y;
+    if (_lu.info() != Eigen::Success)
+      return false;
+    _candidate = _lu.solve(bb);
+    if (_lu.info() != Eigen::Success || !_candidate.allFinite())
+      return false;
+    const double rn = residualNorm(_candidate, bb, _candidateResidual);
+    if (!acceptable(rn, normB)) {
+      if (std::isfinite(rn) &&
+          !(rn >= currentResidual)) { // not accurate enough, but better than
+                                      // the LDL^T answer
+        xx = _candidate;
+        _residual.swap(_candidateResidual);
+        recordResidual(rn, normB);
+        ++_fallbackUsedCount;
+      }
+      return false;
+    }
+    xx = _candidate;
+    _residual.swap(_candidateResidual);
+    recordResidual(rn, normB);
+    ++_fallbackUsedCount;
+    ++_fallbackSuccessCount;
+    _lastUsedFallback = true;
     return true;
   }
 
-  //! iterative refinement against the unregularized matrix, then the accuracy check / LU fallback (one residual each step)
-  void refineAndCheck(Eigen::Map<Eigen::VectorXd>& xx,
-                      const Eigen::Map<const Eigen::VectorXd>& bb) {
-    const double nb = bb.cwiseAbs().maxCoeff();
-    double rn = xx.allFinite() ? residualNorm(xx, bb)
-                               : std::numeric_limits<double>::infinity();
-    for (int k = 0; k < _refinementSteps && std::isfinite(rn) && rn > _refinementTol * nb; ++k) {
-      const double before = rn;
-      xx += _ldlt.solve(_residual);  // existing factors, no new factorization
-      ++_lastRefinementSteps;
-      rn = residualNorm(xx, bb);
-      // relative to |b| on purpose: a normwise backward error |K||x| would hide the delta bias when K has huge barrier entries
-      if (!(rn <= 0.5 * before)) break;  // stalled: rounding level reached, or the regularization bias is not contracting
-    }
-    if (_fallbackTol > 0.0 && !(rn <= _fallbackTol * nb)) {
-      const Eigen::VectorXd keep = xx;
-      if (solveWithLU(xx, bb)) {
-        const double rl = residualNorm(xx, bb);
-        if (!std::isfinite(rn) || rl <= rn) {
-          ++_fallbackCount;
-          rn = rl;
-        } else {
-          xx = keep;  // the LU did not help: keep the LDL^T answer
-        }
-      }
-      if (!(rn <= _fallbackTol * nb)) ++_inaccurateCount;
-    }
-  }
-
-  bool factorize(const g2o::SparseBlockMatrix<MatrixType>& A) {
-    g2o::G2OBatchStatistics* globalStats =
-        g2o::G2OBatchStatistics::globalStats();
+  bool factorize(const g2o::SparseBlockMatrix<MatrixType> &A) {
+    _matrixReady = false;
+    if (A.rows() != A.cols() || A.rows() <= 0)
+      return false;
+    g2o::G2OBatchStatistics *stats = g2o::G2OBatchStatistics::globalStats();
+    if (A.rows() != _sparseMatrix.rows() || A.cols() != _sparseMatrix.cols())
+      _init = true;
     if (_init) {
       const double t = g2o::get_monotonic_time();
       _sparseMatrix.resize(A.rows(), A.cols());
@@ -312,51 +468,58 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
         _ldlt.analyzePattern(_sparseMatrix);
         _ldlt.buildPermutationMap(_sparseMatrix);
         storePattern();
-        _luAnalyzed = false;  // the LU fallback must analyze the new pattern
+        _luAnalyzed = false;
+        _fullPatternReady = false;
       }
       _init = false;
-      if (globalStats)
-        globalStats->timeSymbolicDecomposition = g2o::get_monotonic_time() - t;
+      if (stats)
+        stats->timeSymbolicDecomposition = g2o::get_monotonic_time() - t;
     } else {
       this->_ccsMatrix->fillCCS(_sparseMatrix.valuePtr(), true);
       regularize();
     }
+    // Reject invalid coefficients before entering either numeric factorization.
+    if (!Eigen::Map<const Eigen::VectorXd>(_sparseMatrix.valuePtr(),
+                                           _sparseMatrix.nonZeros())
+             .allFinite())
+      return false;
+    _matrixReady = true;
     const double t = g2o::get_monotonic_time();
     if (_prePermuted)
       _ldlt.factorizeFast(_sparseMatrix);
     else
       _ldlt.factorize(_sparseMatrix);
-    if (globalStats)
-      globalStats->timeNumericDecomposition = g2o::get_monotonic_time() - t;
+    if (stats)
+      stats->timeNumericDecomposition = g2o::get_monotonic_time() - t;
     if (_ldlt.info() != Eigen::Success) {
-      if (this->writeDebug()) {
-        G2O_ERROR("QDLDLT factorization failed, writing debug.txt");
+      if (this->writeDebug())
         A.writeOctave("debug.txt");
-      } else {
-        G2O_DEBUG("QDLDLT factorization failed");
-      }
+      G2O_DEBUG("QDLDLT numeric factorization failed");
       return false;
     }
     return true;
   }
-
   bool samePattern() const {
-    if (!_analyzed) return false;
+    if (!_analyzed)
+      return false;
     const int n = static_cast<int>(_sparseMatrix.cols());
-    if (static_cast<int>(_patternOuter.size()) != n + 1) return false;
-    const int* outer = _sparseMatrix.outerIndexPtr();
-    if (!std::equal(outer, outer + n + 1, _patternOuter.begin())) return false;
+    if (static_cast<int>(_patternOuter.size()) != n + 1)
+      return false;
+    const int *outer = _sparseMatrix.outerIndexPtr();
+    if (!std::equal(outer, outer + n + 1, _patternOuter.begin()))
+      return false;
     const int nnz = outer[n];
-    if (static_cast<int>(_patternInner.size()) != nnz) return false;
-    const int* inner = _sparseMatrix.innerIndexPtr();
+    if (static_cast<int>(_patternInner.size()) != nnz)
+      return false;
+    const int *inner = _sparseMatrix.innerIndexPtr();
     return std::equal(inner, inner + nnz, _patternInner.begin());
   }
 
   void storePattern() {
     const int n = static_cast<int>(_sparseMatrix.cols());
-    const int* outer = _sparseMatrix.outerIndexPtr();
+    const int *outer = _sparseMatrix.outerIndexPtr();
     _patternOuter.assign(outer, outer + n + 1);
-    const int* inner = _sparseMatrix.innerIndexPtr();
+    const int *inner = _sparseMatrix.innerIndexPtr();
     _patternInner.assign(inner, inner + outer[n]);
     _analyzed = true;
   }
@@ -364,8 +527,8 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
   void locateDiagonal() {
     const int n = static_cast<int>(_sparseMatrix.cols());
     _diagIndex.assign(n, -1);
-    const int* outer = _sparseMatrix.outerIndexPtr();
-    const int* inner = _sparseMatrix.innerIndexPtr();
+    const int *outer = _sparseMatrix.outerIndexPtr();
+    const int *inner = _sparseMatrix.innerIndexPtr();
     for (int c = 0; c < n; ++c)
       for (int k = outer[c]; k < outer[c + 1]; ++k)
         if (inner[k] == c) {
@@ -374,10 +537,12 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
         }
     _regularization = Eigen::VectorXd::Zero(n);
     _residual.resize(n);
+    _candidate.resize(n);
+    _candidateResidual.resize(n);
   }
 
   void regularize() {
-    double* values = _sparseMatrix.valuePtr();
+    double *values = _sparseMatrix.valuePtr();
     _numRegularized = 0;
     for (int c = 0; c < static_cast<int>(_diagIndex.size()); ++c) {
       const int k = _diagIndex[c];
@@ -398,18 +563,17 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
    * Not available for indefinite (KKT) systems.
    */
   bool solveBlocks_impl(
-      const g2o::SparseBlockMatrix<MatrixType>& A,
-      std::function<void(g2o::MarginalCovarianceCholesky&)> compute)
-      override {
-    if (!factorize(A)) return false;
-    const Eigen::VectorXd& d = _ldlt.vectorD();
-    if (_numRegularized > 0 || (d.array() <= 0.0).any()) {
-      G2O_WARN(
-          "LinearSolverEigenQDLDLT: marginal covariances need a positive "
-          "definite system");
+      const g2o::SparseBlockMatrix<MatrixType> &A,
+      std::function<void(g2o::MarginalCovarianceCholesky &)> compute) override {
+    if (!factorize(A))
+      return false;
+    const Eigen::VectorXd &d = _ldlt.vectorD();
+    if (_numRegularized > 0 || !d.allFinite() || (d.array() <= 0.0).any()) {
+      G2O_WARN("LinearSolverEigenQDLDLT: marginal covariances need a positive "
+               "definite system");
       return false;
     }
-    const SparseMatrix& L = _ldlt.matrixL().nestedExpression();  // strict lower
+    const SparseMatrix &L = _ldlt.matrixL().nestedExpression(); // strict lower
     const int n = static_cast<int>(L.cols());
     std::vector<int> Lp(n + 1), Li(L.nonZeros() + n);
     std::vector<double> Lx(L.nonZeros() + n);
@@ -419,7 +583,7 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
       Lp[j] = p;
       Li[p] = j;
       Lx[p++] = s;
-      for (SparseMatrix::InnerIterator it(L, j); it; ++it) {  // rows sorted
+      for (SparseMatrix::InnerIterator it(L, j); it; ++it) { // rows sorted
         Li[p] = static_cast<int>(it.row());
         Lx[p++] = it.value() * s;
       }
@@ -428,18 +592,20 @@ class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
     // Eigen: P A P^T is factored and P.indices()[i] is the new position of i,
     // i.e. the inverse permutation that MarginalCovarianceCholesky expects
     std::vector<int> pinv(n);
-    const auto& P = _ldlt.permutationP();
-    for (int i = 0; i < n; ++i) pinv[i] = P.size() == n ? P.indices()[i] : i;
+    const auto &P = _ldlt.permutationP();
+    for (int i = 0; i < n; ++i)
+      pinv[i] = P.size() == n ? P.indices()[i] : i;
     g2o::MarginalCovarianceCholesky mcc;
     mcc.setCholeskyFactor(n, Lp.data(), Li.data(), Lx.data(), pinv.data());
     compute(mcc);
-    g2o::G2OBatchStatistics* globalStats =
+    g2o::G2OBatchStatistics *globalStats =
         g2o::G2OBatchStatistics::globalStats();
-    if (globalStats) globalStats->choleskyNNZ = p;
+    if (globalStats)
+      globalStats->choleskyNNZ = p;
     return true;
   }
 };
 
-}  // namespace cg2o
+} // namespace cg2o
 
-#endif  // CG2O_LINEAR_SOLVER_EIGEN_QDLDLT_H
+#endif // CG2O_LINEAR_SOLVER_EIGEN_QDLDLT_H

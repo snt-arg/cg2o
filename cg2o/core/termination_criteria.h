@@ -29,27 +29,25 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #ifndef CG2O_TERMINATION_CRITERIA_H
 #define CG2O_TERMINATION_CRITERIA_H
 
-
-#include "optimizable_graph.h"
-#include <Eigen/Dense>
-#include <functional>
+#include "g2o/core/optimizable_graph.h"
+#include <Eigen/Core>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
-#include <unordered_map>
 
 namespace cg2o {
 
 class TerminationCriteria {
 public:
   enum class ConvergenceCriterion {
-    UpdateNorm = 0, //||update||
+    UpdateNorm = 0,      //||update||
     NewtonDecrement = 1, //||b^T * update||
-    GradientNorm = 2, // ||b||
+    GradientNorm = 2,    // ||b||
     // |b^T * update| < eps * (relative_cost_offset + |cost|): the Newton
     // decrement test scaled by the objective value, so that the tolerance does
     // not depend on the scale of the cost. Needs the current cost; use the
-    // four-argument verifyConvergence (the optimizer passes activeChi2()).
+    // four-argument verifyConvergence (the optimizer passes
+    // activeRobustChi2()).
     RelativeNewtonDecrement = 3
   };
 
@@ -62,69 +60,47 @@ public:
   double relative_cost_offset = 1.0;
 
 private:
-  ConvergenceCriterion _convergenceCriterion = ConvergenceCriterion::NewtonDecrement;
-
-  // arguments: b, update, epsilon, cost
-  using ConvergenceFunc = std::function<bool(
-      const Eigen::VectorXd &, const Eigen::VectorXd &, double, double)>;
-  using ConstraintFeasibilityFunc = std::function<bool(double)>;
-
-  std::unordered_map<ConvergenceCriterion, ConvergenceFunc>
-      convergenceStrategies;
+  ConvergenceCriterion _convergenceCriterion =
+      ConvergenceCriterion::NewtonDecrement;
 
 public:
-  TerminationCriteria() {
-    // Initialize solution acceptance strategies
-    convergenceStrategies[ConvergenceCriterion::UpdateNorm] =
-        [this](const Eigen::VectorXd &, const Eigen::VectorXd &updateVec,
-               double epsilon, double) {
-          if (epsilon < 0)
-            epsilon = std::abs(epsilon) * epsilon_convergence;
-          return updateVec.norm() < epsilon;
-        };
+  // Ref accepts solver maps directly, without copying either vector.
+  bool verifyConvergence(Eigen::Ref<const Eigen::VectorXd> bVec,
+                         Eigen::Ref<const Eigen::VectorXd> updateVec,
+                         double epsilon, double cost) const {
+    if (bVec.size() != updateVec.size() || !bVec.allFinite() ||
+        !updateVec.allFinite() || !std::isfinite(cost))
+      return false;
+    if (epsilon < 0.0)
+      epsilon = -epsilon * epsilon_convergence;
+    if (!(epsilon >= 0.0) || !std::isfinite(epsilon))
+      return false;
 
-    convergenceStrategies[ConvergenceCriterion::NewtonDecrement] =
-        [this](const Eigen::VectorXd &bVec, const Eigen::VectorXd &updateVec,
-               double epsilon, double) {
-          if (epsilon < 0)
-            epsilon = std::abs(epsilon) * epsilon_convergence;
-          double decrementSquared = updateVec.transpose() * bVec;
-          double decrement = std::abs(decrementSquared);
-          return decrement < epsilon;
-        };
-
-    convergenceStrategies[ConvergenceCriterion::GradientNorm] =
-        [this](const Eigen::VectorXd &bVec, const Eigen::VectorXd &,
-               double epsilon, double) {
-          if (epsilon < 0)
-            epsilon = std::abs(epsilon) * epsilon_convergence;
-          return bVec.norm() < epsilon;
-        };
-
-    convergenceStrategies[ConvergenceCriterion::RelativeNewtonDecrement] =
-        [this](const Eigen::VectorXd &bVec, const Eigen::VectorXd &updateVec,
-               double epsilon, double cost) {
-          if (epsilon < 0)
-            epsilon = std::abs(epsilon) * epsilon_convergence;
-          const double decrement = std::abs(updateVec.dot(bVec));
-          return decrement < epsilon * (relative_cost_offset + std::abs(cost));
-        };
+    double measure;
+    switch (_convergenceCriterion) {
+    case ConvergenceCriterion::UpdateNorm:
+      measure = updateVec.norm();
+      break;
+    case ConvergenceCriterion::NewtonDecrement:
+      measure = std::abs(updateVec.dot(bVec));
+      break;
+    case ConvergenceCriterion::GradientNorm:
+      measure = bVec.norm();
+      break;
+    case ConvergenceCriterion::RelativeNewtonDecrement:
+      measure = std::abs(updateVec.dot(bVec));
+      epsilon *= relative_cost_offset + std::abs(cost);
+      break;
+    default:
+      return false;
+    }
+    return std::isfinite(measure) && std::isfinite(epsilon) &&
+           measure < epsilon;
   }
 
-  // Public methods to evaluate termination conditions
-  // cost: current objective value, only used by RelativeNewtonDecrement
-  // (cost = 0 gives eps * relative_cost_offset, i.e. the absolute test).
-  bool verifyConvergence(const Eigen::VectorXd &bVec,
-                         const Eigen::VectorXd &updateVec, double epsilon,
-                         double cost) {
-    auto it = convergenceStrategies.find(_convergenceCriterion);
-    return it != convergenceStrategies.end() &&
-           it->second(bVec, updateVec, epsilon, cost);
-  }
-
-  // Original signature, unchanged behaviour for the existing criteria.
-  bool verifyConvergence(const Eigen::VectorXd &bVec,
-                         const Eigen::VectorXd &updateVec, double epsilon) {
+  bool verifyConvergence(Eigen::Ref<const Eigen::VectorXd> bVec,
+                         Eigen::Ref<const Eigen::VectorXd> updateVec,
+                         double epsilon) const {
     return verifyConvergence(bVec, updateVec, epsilon, 0.0);
   }
 
@@ -190,10 +166,18 @@ public:
     */
     const char *name = nullptr;
     switch (index) {
-    case 0: name = "Update Norm"; break;
-    case 1: name = "Newton Decrement"; break;
-    case 2: name = "Gradient Norm"; break;
-    case 3: name = "Relative Newton Decrement"; break;
+    case 0:
+      name = "Update Norm";
+      break;
+    case 1:
+      name = "Newton Decrement";
+      break;
+    case 2:
+      name = "Gradient Norm";
+      break;
+    case 3:
+      name = "Relative Newton Decrement";
+      break;
     default:
       throw std::invalid_argument(
           "Invalid stopping criterion. Valid options are 0:Update Norm, "
@@ -207,6 +191,5 @@ public:
 };
 
 } // namespace cg2o
-
 
 #endif // CG2O_TERMINATION_CRITERIA_H

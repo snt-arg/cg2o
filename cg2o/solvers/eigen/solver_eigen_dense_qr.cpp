@@ -27,7 +27,6 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
-
 #include "g2o/core/block_solver.h"
 #include "g2o/core/optimization_algorithm_dogleg.h"
 #include "g2o/core/optimization_algorithm_factory.h"
@@ -43,21 +42,23 @@ namespace cg2o {
 
 namespace {
 template <int p, int l, bool blockorder>
- std::unique_ptr<g2o::BlockSolverBase> AllocateSolverEigenDenseQR() {
-  G2O_DEBUG("Using EigenDenseQR poseDim {} landMarkDim {} blockordering {}", p, l, blockorder);
-  auto linearSolver = std::make_unique<
-      LinearSolverEigenDenseQR<typename g2o::BlockSolverPL<p, l>::PoseMatrixType>>();
- // linearSolver->setBlockOrdering(blockorder);
+std::unique_ptr<g2o::BlockSolverBase> AllocateSolverEigenDenseQR() {
+  G2O_DEBUG("Using EigenDenseQR poseDim {} landMarkDim {} blockordering {}", p,
+            l, blockorder);
+  auto linearSolver = std::make_unique<LinearSolverEigenDenseQR<
+      typename g2o::BlockSolverPL<p, l>::PoseMatrixType>>();
+  // linearSolver->setBlockOrdering(blockorder);
   return std::make_unique<g2o::BlockSolverPL<p, l>>(std::move(linearSolver));
 }
-}  // namespace
+} // namespace
 
 /**
  * Helper function for allocating EigenDenseQR-based solvers
  */
-static g2o::OptimizationAlgorithm* createSolverEigenDenseQR(const std::string& fullSolverName) {
+static g2o::OptimizationAlgorithm *
+createSolverEigenDenseQR(const std::string &fullSolverName) {
   static const std::map<std::string,
-                        std::function< std::unique_ptr<g2o::BlockSolverBase>()>>
+                        std::function<std::unique_ptr<g2o::BlockSolverBase>()>>
       solver_factories{
           {"var", &AllocateSolverEigenDenseQR<-1, -1, true>},
           {"fix3_2", &AllocateSolverEigenDenseQR<3, 2, true>},
@@ -70,7 +71,8 @@ static g2o::OptimizationAlgorithm* createSolverEigenDenseQR(const std::string& f
   using namespace g2o;
   string solverName = fullSolverName.substr(3);
   auto solverf = solver_factories.find(solverName);
-  if (solverf == solver_factories.end()) return nullptr;
+  if (solverf == solver_factories.end())
+    return nullptr;
 
   string methodName = fullSolverName.substr(0, 2);
 
@@ -85,11 +87,13 @@ static g2o::OptimizationAlgorithm* createSolverEigenDenseQR(const std::string& f
   return nullptr;
 }
 
-class EigenDenseQR_SolverCreator : public g2o::AbstractOptimizationAlgorithmCreator {
- public:
-  explicit EigenDenseQR_SolverCreator(const g2o::OptimizationAlgorithmProperty& p)
+class EigenDenseQR_SolverCreator
+    : public g2o::AbstractOptimizationAlgorithmCreator {
+public:
+  explicit EigenDenseQR_SolverCreator(
+      const g2o::OptimizationAlgorithmProperty &p)
       : AbstractOptimizationAlgorithmCreator(p) {}
-  virtual g2o::OptimizationAlgorithm* construct() {
+  virtual g2o::OptimizationAlgorithm *construct() {
     return createSolverEigenDenseQR(property().name);
   }
 };
@@ -98,33 +102,90 @@ class EigenDenseQR_SolverCreator : public g2o::AbstractOptimizationAlgorithmCrea
 G2O_REGISTER_OPTIMIZATION_LIBRARY(eigen_dense_qr);
 
 // Gauss-Newton solvers
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(gn_var_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("gn_var_eigen_dense_qr", "Gauss-Newton: Dense QR solver using Eigen's HouseholderQR (variable blocksize)", "EigenDenseQR", false, Eigen::Dynamic, Eigen::Dynamic)));
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(gn_fix3_2_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("gn_fix3_2_eigen_dense_qr", "Gauss-Newton: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)", "EigenDenseQR", true, 3, 2)));
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(gn_fix6_3_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("gn_fix6_3_eigen_dense_qr", "Gauss-Newton: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)", "EigenDenseQR", true, 6, 3)));
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(gn_fix7_3_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("gn_fix7_3_eigen_dense_qr", "Gauss-Newton: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)", "EigenDenseQR", true, 7, 3)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    gn_var_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "gn_var_eigen_dense_qr",
+        "Gauss-Newton: Dense QR solver using Eigen's HouseholderQR (variable "
+        "blocksize)",
+        "EigenDenseQR", false, Eigen::Dynamic, Eigen::Dynamic)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    gn_fix3_2_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "gn_fix3_2_eigen_dense_qr",
+        "Gauss-Newton: Dense QR solver using Eigen's HouseholderQR (fixed "
+        "blocksize)",
+        "EigenDenseQR", true, 3, 2)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    gn_fix6_3_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "gn_fix6_3_eigen_dense_qr",
+        "Gauss-Newton: Dense QR solver using Eigen's HouseholderQR (fixed "
+        "blocksize)",
+        "EigenDenseQR", true, 6, 3)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    gn_fix7_3_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "gn_fix7_3_eigen_dense_qr",
+        "Gauss-Newton: Dense QR solver using Eigen's HouseholderQR (fixed "
+        "blocksize)",
+        "EigenDenseQR", true, 7, 3)));
 
 // Levenberg-Marquardt solvers
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(lm_var_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("lm_var_eigen_dense_qr", "Levenberg: Dense QR solver using Eigen's HouseholderQR (variable blocksize)", "EigenDenseQR", false, Eigen::Dynamic, Eigen::Dynamic)));
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(lm_fix3_2_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("lm_fix3_2_eigen_dense_qr", "Levenberg: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)", "EigenDenseQR", true, 3, 2)));
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(lm_fix6_3_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("lm_fix6_3_eigen_dense_qr", "Levenberg: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)", "EigenDenseQR", true, 6, 3)));
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(lm_fix7_3_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("lm_fix7_3_eigen_dense_qr", "Levenberg: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)", "EigenDenseQR", true, 7, 3)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    lm_var_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "lm_var_eigen_dense_qr",
+        "Levenberg: Dense QR solver using Eigen's HouseholderQR (variable "
+        "blocksize)",
+        "EigenDenseQR", false, Eigen::Dynamic, Eigen::Dynamic)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    lm_fix3_2_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "lm_fix3_2_eigen_dense_qr",
+        "Levenberg: Dense QR solver using Eigen's HouseholderQR (fixed "
+        "blocksize)",
+        "EigenDenseQR", true, 3, 2)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    lm_fix6_3_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "lm_fix6_3_eigen_dense_qr",
+        "Levenberg: Dense QR solver using Eigen's HouseholderQR (fixed "
+        "blocksize)",
+        "EigenDenseQR", true, 6, 3)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    lm_fix7_3_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "lm_fix7_3_eigen_dense_qr",
+        "Levenberg: Dense QR solver using Eigen's HouseholderQR (fixed "
+        "blocksize)",
+        "EigenDenseQR", true, 7, 3)));
 
 // Dogleg solvers
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(dl_var_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("dl_var_eigen_dense_qr", "Dogleg: Dense QR solver using Eigen's HouseholderQR (variable blocksize)", "EigenDenseQR", false, Eigen::Dynamic, Eigen::Dynamic)));
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(dl_fix3_2_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("dl_fix3_2_eigen_dense_qr", "Dogleg: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)", "EigenDenseQR", true, 3, 2)));
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(dl_fix6_3_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("dl_fix6_3_eigen_dense_qr", "Dogleg: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)", "EigenDenseQR", true, 6, 3)));
-G2O_REGISTER_OPTIMIZATION_ALGORITHM(dl_fix7_3_eigen_dense_qr, new EigenDenseQR_SolverCreator(
-    g2o::OptimizationAlgorithmProperty("dl_fix7_3_eigen_dense_qr", "Dogleg: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)", "EigenDenseQR", true, 7, 3)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    dl_var_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "dl_var_eigen_dense_qr",
+        "Dogleg: Dense QR solver using Eigen's HouseholderQR (variable "
+        "blocksize)",
+        "EigenDenseQR", false, Eigen::Dynamic, Eigen::Dynamic)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    dl_fix3_2_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "dl_fix3_2_eigen_dense_qr",
+        "Dogleg: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)",
+        "EigenDenseQR", true, 3, 2)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    dl_fix6_3_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "dl_fix6_3_eigen_dense_qr",
+        "Dogleg: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)",
+        "EigenDenseQR", true, 6, 3)));
+G2O_REGISTER_OPTIMIZATION_ALGORITHM(
+    dl_fix7_3_eigen_dense_qr,
+    new EigenDenseQR_SolverCreator(g2o::OptimizationAlgorithmProperty(
+        "dl_fix7_3_eigen_dense_qr",
+        "Dogleg: Dense QR solver using Eigen's HouseholderQR (fixed blocksize)",
+        "EigenDenseQR", true, 7, 3)));
 
-}  // namespace cg2o
+} // namespace cg2o

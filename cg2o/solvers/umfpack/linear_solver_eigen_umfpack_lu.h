@@ -43,6 +43,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 
 #include <filesystem>
 
+#include <algorithm>
+
 namespace cg2o {
 
 /**
@@ -110,6 +112,17 @@ public:
 
   virtual bool solve(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
                      double *b) override {
+    if (A.rows() == 0)
+      return true;
+    if (A.rows() == A.cols() && solveImpl(A, x, b))
+      return true;
+    std::fill(x, x + A.cols(), 0.0);
+    return false;
+  }
+
+protected:
+  bool solveImpl(const g2o::SparseBlockMatrix<MatrixType> &A, double *x,
+                 double *b) {
     using namespace g2o;
     double t;
     // auto t1 = get_monotonic_time();
@@ -123,9 +136,11 @@ public:
     // auto t2 = get_monotonic_time();
     // std::cout << "UmfPackLU solve time: " << t2 - t1 << std::endl;
 
-    if (_umfpackLU.info() != Eigen::Success) {
+    if (_umfpackLU.info() != Eigen::Success || !xx.allFinite()) {
       G2O_ERROR("UmfPackLU solve failed.");
+#if CG2O_DEBUG_LINEAR_SOLVER
       debug_linear_solver(A, b, x);
+#endif
       return false;
     }
 
@@ -172,7 +187,9 @@ protected:
 
     if (_umfpackLU.info() != Eigen::Success) {
       G2O_ERROR("UmfPackLU decomposition failed.");
+#if CG2O_DEBUG_LINEAR_SOLVER
       debug_linear_solver(A, nullptr, nullptr);
+#endif
 
       return false;
     }
@@ -217,12 +234,9 @@ protected:
       const g2o::SparseBlockMatrix<MatrixType> &A,
       std::function<void(g2o::MarginalCovarianceCholesky &)> /*compute*/)
       override {
-    double t;
-    if (!computeUmfPackLU(A, t))
-      return false;
-
-    g2o::MarginalCovarianceCholesky mcc;
-    return true;
+    (void)A;
+    // No covariance factor/callback is supplied by this backend.
+    return false;
   }
 };
 

@@ -4,8 +4,7 @@ set(SOURCE_FILES
   solver_eigen_dense_qr.cpp
   solver_eigen_svd.cpp 
   solver_eigen_lu.cpp 
-  solver_eigen_dense_qr.cpp 
-  solver_eigen_lu.cpp
+  solver_eigen_qr.cpp
   solver_eigen_bicgstab.cpp
   solver_eigen_lscg.cpp
   solver_eigen_ldlt.cpp  
@@ -22,6 +21,7 @@ set(HEADER_FILES
   linear_solver_eigen_svd.h 
   linear_solver_eigen_bicgstab.h
   linear_solver_eigen_lscg.h
+  linear_solver_checks.h
 )
 
 add_library(solvers_eigen ${G2O_LIB_TYPE}
@@ -38,6 +38,7 @@ target_link_libraries(solvers_eigen PUBLIC
   g2o::stuff 
   g2o::core 
   ${CG2O_EIGEN3_EIGEN_TARGET}
+  OpenMP::OpenMP_CXX
 )
 
 
