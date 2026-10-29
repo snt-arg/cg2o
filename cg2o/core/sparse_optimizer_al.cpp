@@ -126,16 +126,7 @@ int SparseOptimizerAL::optimize(int iterations, bool online) {
   bool outerLoopStop = false;
   bool ok = true;
 
-  if (!_warm_start_lagrange_multiplier_eq_flag) {
-    _reset_lagrange_multipliers = true;
-    resetLagrangeMultiplierEq();
-    for (auto &edge : _activeEdgesIneq) {
-      executeIneqMultiplierUpdate(edge);
-    }
-    _reset_lagrange_multipliers = false;
-  } else {
-    _reset_lagrange_multipliers = false;
-  }
+  _start_policy.prepare(*this);
 
   ok = _algorithm->init(online);
   if (!ok) {

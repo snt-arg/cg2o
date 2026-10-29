@@ -1,7 +1,9 @@
 set(source
   sparse_optimizer_bipm.cpp
   sparse_optimizer_ispd.cpp
+  ispd_start_point_policy.cpp
   sparse_optimizer_al.cpp
+  al_start_point_policy.cpp
 )
 
 set(header
@@ -16,6 +18,10 @@ set(header
   vertex_lagrange_multiplier.h
   warm_start_math.h
   vertex_state_guard.h
+  start_point_common.h
+  ispd_start_point_policy.h
+  ispd_start_point_policy.hpp
+  al_start_point_policy.h
 )
 
 # Define the library

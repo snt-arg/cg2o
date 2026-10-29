@@ -62,5 +62,51 @@ inline bool centerPair(double &slack, double &multiplier, double mu, double lo,
   return validPair(slack, multiplier, 1.0 / mu);
 }
 
+// Repair and floors of one row of a restored point. An invalid pair gets the
+// cold values, with s >= -g: s > 0 alone does not mean g(x) < 0. Slack
+// projection sets s = max(-g, floor). Returns true if the pair was repaired.
+inline bool pushRow(double &slack, double &multiplier, double g, double kappa,
+                    double slackFloor, double multiplierFloor, double coldSlack,
+                    double coldMultiplier, bool projectSlack) {
+  bool repaired = false;
+  if (!validPair(slack, multiplier, kappa)) {
+    slack = std::max(-g, std::max(slackFloor, coldSlack));
+    multiplier = std::max(multiplierFloor, coldMultiplier);
+    repaired = true;
+  }
+  if (projectSlack)
+    slack = std::max(-g, std::max(slackFloor, 1e-12));
+  slack = std::max(slack, slackFloor);
+  multiplier = std::max(multiplier, multiplierFloor);
+  return repaired;
+}
+
+// Change detection for one warm row: g at the start of the solve is compared
+// with a reference, the stored g (test 0) or -s (tests 1 and 2). Tests 0 and
+// 1 scale the tolerance by max(1, |ref|, s), test 2 by max(|g|, |s|).
+// A changed or invalid row is re-initialised: mode 0 centred at mu = 1/kappa,
+// otherwise with the cold values. Returns true if the row was re-initialised.
+inline bool resetChangedRow(double &slack, double &multiplier, double g,
+                            double storedG, double kappa, int test,
+                            double tolerance, int mode, double coldSlack,
+                            double coldMultiplier) {
+  const double ref = (test == 0) ? storedG : -slack;
+  const double scale = test == 2 ? std::max({std::numeric_limits<double>::min(),
+                                             std::abs(g), std::abs(slack)})
+                                 : std::max({1.0, std::abs(ref), slack});
+  if (std::abs(g - ref) <= tolerance * scale &&
+      validPair(slack, multiplier, kappa))
+    return false;
+  if (mode == 0) {
+    const double mu = 1.0 / kappa;
+    slack = std::max(-g, std::sqrt(mu));
+    multiplier = mu / slack;
+  } else {
+    slack = std::max(-g, coldSlack);
+    multiplier = coldMultiplier;
+  }
+  return true;
+}
+
 } // namespace cg2o::warm_start
 #endif

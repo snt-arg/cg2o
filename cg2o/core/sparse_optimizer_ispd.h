@@ -31,6 +31,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #define G2O_GRAPH_OPTIMIZER_PDIS_H
 
 #include "g2o/core/g2o_core_api.h"
+#include "ispd_start_point_policy.h"
 #include "sparse_optimizer_for_constraints.h"
 #include <algorithm>
 #include <cstddef>
@@ -53,6 +54,14 @@ class BaseFixedSizedEdgeIneq;
 
 template <int D, typename E, typename... VertexTypes>
 class BaseFixedSizedEdgeEq;
+
+// Operations on the state of one inequality edge (slack s, multiplier lambda)
+enum class IneqStateOperation {
+  ColdInitialize,       // s, lambda from the cold initialization rules
+  PredictConstraint,    // predicted g after the step (stored in rho)
+  ComputeAuxiliaryStep, // ds, dlambda and their backtracking step
+  ApplyAuxiliaryStep    // s, lambda += step (ds, dlambda), kept positive
+};
 
 // Specialized optimizer inheriting from SparseOptimizerForConstraints
 class G2O_CORE_API SparseOptimizerISPD
@@ -280,7 +289,7 @@ public:
   double getDualityGap(EdgeType *edge);
 
   template <int D, typename E, typename... VertexTypes, typename EdgeType>
-  void edgeProcessing(EdgeType *edge, int controller);
+  void edgeProcessing(EdgeType *edge, IneqStateOperation operation);
 
   template <int D, typename E, typename... VertexTypes>
   void
@@ -290,7 +299,15 @@ public:
   void initializeAuxiliaryVariables(
       BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *edge);
 
-  void executeEdgeProcessing(void *edgePtr, int controller);
+  void executeEdgeProcessing(void *edgePtr, IneqStateOperation operation);
+  //! calls f(IneqBlock &) for every active inequality edge, in solve order
+  template <typename F> void forEachActiveIneqBlock(F &&f) {
+    for (auto *edge : _activeEdgesIneq) {
+      auto it = _ineq_blocks.find(edge);
+      if (it != _ineq_blocks.end())
+        f(it->second);
+    }
+  }
   virtual void update(const double *update) override;
   virtual int optimize(int iterations, bool online = false) override;
   void computeKappa(bool input = false);
@@ -307,7 +324,14 @@ public:
   // 2: previous middle point; a heuristic for avoiding boundary blocking.
   // 3: current values supplied by an application warm-start policy.
   //
-  // Owned estimate snapshots coexist with g2o push/pop backups. Insert
+  // The start point is managed by startPointPolicy() (ISPDStartPointPolicy):
+  // the setWarmStart*() functions below write its options() and validate
+  // each value; the options can also be set directly, as one struct:
+  //   opt.startPointPolicy().options().source = ISPDStartSource::PreviousFinal;
+  //   opt.startPointPolicy().options().shift.enabled = true;
+  // initializeOptimization() only builds the active structure.
+  //
+  // Owned estimate copies coexist with g2o push/pop backups. Insert
   // vertices using their concrete pointer type, or register them explicitly
   // with registerWarmStartVertex<T>(); serialized estimate data is a fallback.
   // Manifold estimates are copied as estimates, never as tangent increments.
@@ -336,6 +360,9 @@ public:
   //   opt.addWarmStartShiftSequence(inputBoundEdges);
   //   opt.setWarmStartPostShiftCallback(terminalRollout);
   //   // Update fixed x0 before each optimize(). Do not shift x a second time.
+
+  ISPDStartPointPolicy &startPointPolicy() { return _start_policy; }
+  const ISPDStartPointPolicy &startPointPolicy() const { return _start_policy; }
 
   //! 0: cold (default), 1: final iterate, 2: middle iterate,
   //! 3: the values currently in the graph (x, nu, lambda, s and the current
@@ -464,12 +491,14 @@ public:
 
   //! registers one stage sequence for the MPC shift (stage 0 first)
   template <typename T>
-  void addWarmStartShiftSequence(const std::vector<T *> &stages);
+  void addWarmStartShiftSequence(const std::vector<T *> &stages) {
+    _start_policy.addShiftSequence(*this, stages);
+  }
   void clearWarmStartShiftSequences();
   //! After all shifts, before repairs: e.g. roll out the terminal state with
   //! the terminal input. Cleared with the shift sequences on graph removal.
   void setWarmStartPostShiftCallback(std::function<void()> callback) {
-    _post_shift_callback = std::move(callback);
+    _start_policy.setPostShiftCallback(std::move(callback));
   }
   //! forget the stored point; the next solve starts cold
   void resetWarmStart();
@@ -495,33 +524,8 @@ public:
   //! back into the vertices (the vertices do not hold the last iterate)
   bool lastRestored() const;
 
-  // ---- complementarity / centrality statistics --------------------------
-  // For the starting point and for each iterate: mu = s'lambda / m, the
-  // spread of the products s_i lambda_i around mu (centrality C = max_i
-  // |s_i lambda_i / mu - 1|, as in the long-step neighbourhood N(lo, hi)),
-  // the relative gap s'lambda / (1 + |cost|), and the step sizes and
-  // safeguard activity of the iteration.
-  struct PointStats {
-    int iteration = -1;    //!< -1: starting point of the solve
-    int rows = 0;          //!< inequality rows m
-    double kappa = 0;      //!< barrier parameter used (target 1/kappa)
-    double mu = 0;         //!< s'lambda / m
-    double minRatio = 0;   //!< min_i s_i lambda_i / mu
-    double maxRatio = 0;   //!< max_i s_i lambda_i / mu
-    double centrality = 0; //!< max_i |s_i lambda_i / mu - 1|
-    double relativeGap =
-        std::numeric_limits<double>::quiet_NaN(); //!< s'lambda / (1+|F|)
-    double cost =
-        std::numeric_limits<double>::quiet_NaN(); //!< F = chi2/2 of the
-                                                  //!< linearisation point
-    double violation =
-        std::numeric_limits<double>::quiet_NaN(); //!< max(|h|, g+), start only
-    double ineqStep = 1.0;    //!< inequality backtracking step of the iteration
-    double auxStep = 1.0;     //!< lambda/s backtracking step of the iteration
-    double appliedStep = 1.0; //!< step applied to x
-    int attempt = 0;          //!< 0 initial solve, 1 cold retry
-    int scaled = 0; //!< lambda/s components hit by the positivity safeguard
-  };
+  // ---- complementarity / centrality statistics (see ISPDPointStats) -----
+  using PointStats = ISPDPointStats;
   //! starting point of the last optimize() (computed when a warm strategy
   //! is selected or the statistics are recorded)
   const PointStats &lastStartStats() const;
@@ -591,10 +595,12 @@ public:
   double auxCorrectionValue() const;
 
 protected:
-  std::unordered_map<void *, std::function<void(int)>>
+  std::unordered_map<void *, std::function<void(IneqStateOperation)>>
       edgeProcessingFunctionMap;
 
   std::unordered_map<void *, std::function<double()>> getDualityGapFunctionMap;
+  std::unordered_map<const g2o::OptimizableGraph::Edge *, IneqBlock>
+      _ineq_blocks;
   // solver parameter
   double _kappa = 0.0; // initialized on every cold solve
 public:
@@ -693,115 +699,35 @@ double _aux_scaling_factor = 0.2;
 // Positive threshold used when correcting auxiliary variables (theta in the paper)..
 double _aux_correction_value = 1e-3;
 
-
-// ---- Warm start (see setWarmStartStrategy) ----
-// 0 -> cold start, 1 -> final iterate, 2 -> middle iterate of the previous solve
-int _warm_start_strategy = 0;
-// Shift registered stage sequences before the solve (MPC), by n stages.
-bool _warm_start_shift = false;
-int _warm_start_shift_steps = 1;
-// Restore (and shift) the primal variables as well.
-bool _warm_start_primal = true;
-// Middle iterate: 0 -> kappa <= _warm_start_middle_kappa,
-// 1 -> measured duality-gap kappa <= _warm_start_middle_kappa,
-// 2 -> iteration index < _warm_start_middle_iteration,
-// 3 -> relative duality gap >= _warm_start_middle_gap (default)
-int _warm_start_middle_strategy = 3;
-double _warm_start_middle_kappa = 30.0;
-int _warm_start_middle_iteration = 2;
-double _warm_start_middle_gap = 3e-2;
-double _warm_start_middle_lo = 0.0; // neighbourhood filter (off)
-double _warm_start_middle_hi = std::numeric_limits<double>::infinity();
-// Warm kappa: 0 -> stored kappa * factor, 1 -> factor * m / gap, 2 -> value
-int _warm_start_kappa_strategy = 0;
-double _warm_start_kappa_factor = 1.0;
-double _warm_start_kappa_value = 100.0;
-double _warm_start_kappa_gap = 1e-3;
-// Lower bound for s and lambda after restoring (0 = off).
-double _warm_start_push = 0.0;
-double _warm_start_slack_push = 0.0;
-double _warm_start_multiplier_push = 0.0;
-int _warm_start_slack_projection = 0;
-// Centring band [lo, hi] for s_i lambda_i kappa (lo = 0, hi = inf: off) and
-// mode (0 ratio-preserving, 1 keep lambda of active / s of inactive rows).
-double _warm_start_center_lo = 0.0;
-double _warm_start_center_hi = std::numeric_limits<double>::infinity();
-int _warm_start_center_mode = 0;
-// Start cold after a solve that did not converge.
-bool _warm_start_fallback = true;
-// Retry cold (from the restored starting point) when a warm solve fails.
-bool _warm_start_retry = true;
-// Not converged and violation > factor * max(start violation, eps): broken.
-double _warm_start_divergence_factor = 10.0;
-// Changed-constraint test: |g_now - ref| > tol * max(1, |ref|, s) with
-// ref = g_stored (test 0) or ref = -s (test 1).
-double _warm_start_reset_tolerance = 0.5;
-int _warm_start_reset_test = 1;
-// What happens to such rows: 0 -> centred (s = max(-g, sqrt(mu)), lambda =
-// mu / s), 1 -> cold values of the row, 2 -> if any row is flagged, cold
-// start of all lambda, s, nu and kappa (the warm primal is kept)
-int _warm_start_reset_mode = 2;
-
   // clang-format on
 protected:
-  // warm-start helpers (sparse_optimizer_ispd.cpp)
-  bool prepareStartingPoint();
+  friend class ISPDStartPointPolicy;
+  friend class SparseOptimizerForConstraints<SparseOptimizerISPD>;
+  // setWarmStartLagrangeMultiplierFlag(): a cold start keeps nu
+  void setMultiplierReuse(bool reuse) {
+    _start_policy.options().keepEqualityMultipliers = reuse;
+  }
+  bool multiplierReuse() const {
+    return _start_policy.options().keepEqualityMultipliers;
+  }
+  // cold nu, lambda, s and kappa (the solver's initialization rules)
   void coldStart(bool forceEqualityReset = false);
-  void storeStartingPoint();
-  void restoreStartingPoint();
-  bool auxiliariesValid();
-  void validateWarmStartSettings() const;
-  int iterate(int iterations, bool online, bool &warm_stored, bool &failed);
-  void storeWarmPoint(double kappa);
-  void discardVertexSnapshot(); // both snapshots
-  double dualityGapKappa();     // m / sum(s_i lambda_i) over active ineq edges
+  bool auxiliariesValid(); // every active pair can enter the KKT system
+  void validateSettings() const;
+  SolveOutcome runIterations(int iterations, bool online);
+  double dualityGapKappa(); // m / sum(s_i lambda_i) over active ineq edges
   PointStats pointStats(bool withCost); // products of the current iterate
-  bool centringActive() const;
-  bool inMiddleNeighbourhood(const PointStats &st) const;
-  // accumulators filled by edge controller 13
-  double _acc_sum = 0, _acc_min = 0, _acc_max = 0;
-  int _acc_rows = 0;
-  bool _aux_valid = true;
+  double constraintViolation(); // max(|h|, g+) over active constraint edges
   // step sizes and safeguard count of the last update()
   double _last_ineq_step = 1, _last_aux_step = 1, _last_applied_step = 1;
   int _scaled_count = 0;
   PointStats _start_stats, _first_stats;
   bool _record_stats = false;
   std::vector<PointStats> _iteration_stats;
-  double constraintViolation(); // max(|h|, g+) over active constraint edges
-  bool isEqMultiplierVertex(g2o::OptimizableGraph::Vertex *v);
-
-  struct VertexSnapshotEntry {
-    g2o::OptimizableGraph::Vertex *vertex;
-    int id;
-    bool multiplier; // equality multiplier vertex (nu), not primal
-    std::function<bool()> restore;
-  };
-  void pushSnapshot(std::vector<VertexSnapshotEntry> &list, bool primal);
-  void restoreSnapshot(std::vector<VertexSnapshotEntry> &list, bool primal);
-  void discardSnapshot(std::vector<VertexSnapshotEntry> &list);
-  std::vector<VertexSnapshotEntry> _warm_snapshot;
-  std::vector<VertexSnapshotEntry> _start_snapshot;
-  using SnapshotFactory = std::function<std::function<bool()>()>;
-  std::unordered_map<g2o::OptimizableGraph::Vertex *, SnapshotFactory>
-      _snapshot_factories;
-  double _start_point_kappa = 0.0;
-  std::vector<std::function<void(bool, int)>> _shift_functions; // primal, n
-  std::unordered_set<void *> _shift_members;
-  std::function<void()> _post_shift_callback;
-  std::unordered_set<g2o::OptimizableGraph::Vertex *> _eq_multiplier_set;
-  long _solve_counter = 0;      // id of the current / last solve
-  long _warm_point_stamp = -1;  // solve that stored the warm point
-  double _warm_point_kappa = 0; // kappa stored with the point
-  int _warm_point_source = 0;   // 1 final, 2 middle
-  bool _warm_point_valid = false;
+  ISPDStartPointPolicy _start_policy;
   bool _last_converged = false;
-  int _last_warm_used = 0;
   double _last_start_kappa = 0;
-  bool _last_retry = false;
   int _last_iteration_count = 0;
-  bool _last_restored = false;
-  int _last_reset_rows = 0;
 
 private:
   int _step_size_index =

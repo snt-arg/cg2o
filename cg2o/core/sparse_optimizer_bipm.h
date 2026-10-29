@@ -179,6 +179,13 @@ public:
   bool _reset_lagrange_multipliers = false;
   bool _barrier_step_failed = false;
   bool strictlyInterior();
+
+protected:
+  friend class SparseOptimizerForConstraints<SparseOptimizerBIPM>;
+  // setWarmStartLagrangeMultiplierFlag(): keep the equality multipliers
+  void setMultiplierReuse(bool reuse) { _keep_equality_multipliers = reuse; }
+  bool multiplierReuse() const { return _keep_equality_multipliers; }
+  bool _keep_equality_multipliers = false;
 };
 
 template <int D, typename E, typename... VertexTypes>

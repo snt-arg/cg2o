@@ -179,7 +179,7 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
   bool outerLoopStop = false;
   bool ok = true;
   _kappa = _kappa_initial; // reset _kappa to the initial value
-  if (!_warm_start_lagrange_multiplier_eq_flag) {
+  if (!_keep_equality_multipliers) {
     resetLagrangeMultiplierEq();
   }
 

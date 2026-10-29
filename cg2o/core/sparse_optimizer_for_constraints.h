@@ -174,6 +174,9 @@ public:
   virtual bool verifyConvergence(double epsilon);
   virtual bool verifyEqFeasibility(EdgeContainer &edgeVec, double epsilon);
   virtual bool verifyIneqFeasibility(EdgeContainer &edgeVec, double epsilon);
+  //! keep the multipliers of the previous solve; forwarded to the start
+  //! point of the solver (ISPD: equality multipliers of a cold start, AL:
+  //! ALStartSource::PreviousMultipliers, BIPM: equality multipliers)
   void setWarmStartLagrangeMultiplierFlag(bool flag);
   void setInnerIterationsMax(int maxInnerIterations);
   void setLagrangeMultiplierInitial(double lagrangeMultiplierInitial);
@@ -218,9 +221,6 @@ protected:
                                                 // Lagrangian vertex
   int _num_inner_iterations_max = 5; // Maximum number of inner iterations for
                                      // the AL and BIPM algorithm
-  bool _warm_start_lagrange_multiplier_eq_flag =
-      false; // Flag to indicate if the Lagrangian multiplier should be warmed
-             // up
 
   void defineAlphaBacktracking(double alpha);
   // One reusable buffer serves scaled trial and accepted primal updates.

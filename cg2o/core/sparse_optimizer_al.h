@@ -30,6 +30,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #ifndef CG2O_GRAPH_OPTIMIZER_AL_H
 #define CG2O_GRAPH_OPTIMIZER_AL_H
 
+#include "al_start_point_policy.h"
 #include "sparse_optimizer_for_constraints.h"
 #include "vertex_lagrange_multiplier.h"
 
@@ -177,7 +178,22 @@ public:
   // Setter function
   void resetLagrangeMultiplierEq() override;
 
+  //! multipliers and penalties a solve begins with
+  ALStartPointPolicy &startPointPolicy() { return _start_policy; }
+  const ALStartPointPolicy &startPointPolicy() const { return _start_policy; }
+
 protected:
+  friend class ALStartPointPolicy;
+  friend class SparseOptimizerForConstraints<SparseOptimizerAL>;
+  // setWarmStartLagrangeMultiplierFlag(): previous multipliers and penalties
+  void setMultiplierReuse(bool reuse) {
+    _start_policy.options().source =
+        reuse ? ALStartSource::PreviousMultipliers : ALStartSource::Cold;
+  }
+  bool multiplierReuse() const {
+    return _start_policy.options().source == ALStartSource::PreviousMultipliers;
+  }
+  ALStartPointPolicy _start_policy;
   double _rho_min = .00001;      // Minimum value for the penalty parameter
   double _rho_initial = 10;      // Initial value for the penalty parameter
   double _rho_max = 500;         // Maximum value for the penalty parameter

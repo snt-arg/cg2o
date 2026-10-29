@@ -618,7 +618,7 @@ bool SparseOptimizerForConstraints<Derived>::verifyEqFeasibility(
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::setWarmStartLagrangeMultiplierFlag(
     bool flag) {
-  _warm_start_lagrange_multiplier_eq_flag = flag;
+  static_cast<Derived *>(this)->setMultiplierReuse(flag);
 }
 
 template <typename Derived>
@@ -685,7 +685,7 @@ void SparseOptimizerForConstraints<Derived>::setNumInnerIterationsMax(
 template <typename Derived>
 bool SparseOptimizerForConstraints<
     Derived>::getWarmStartLagrangeMultiplierFlag() {
-  return _warm_start_lagrange_multiplier_eq_flag;
+  return static_cast<Derived *>(this)->multiplierReuse();
 }
 
 template <typename Derived>
