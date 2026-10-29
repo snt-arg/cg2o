@@ -92,7 +92,7 @@ enum class ResetMode {
 
 // All settings of the start-point policy. The setWarmStart*() setters of
 // SparseOptimizerISPD write these fields and validate each value; fields set
-// directly are validated when optimize() starts.
+// directly are validated when optimize() starts, whatever the source.
 struct ISPDStartOptions {
   ISPDStartSource source = ISPDStartSource::Cold;
   //! restore (and shift) the primal variables too
@@ -192,9 +192,16 @@ public:
   void invalidate();
 
   // ---- cache and registrations ----
-  //! a cached point exists that the next optimize() can use
+  //! a cached point exists that the next optimize() can use: it was stored
+  //! for the selected source (PreviousFinal or PreviousMiddle); a point of
+  //! the other source is not used, so a switch costs one cold start
   bool available(bool lastConverged) const {
-    return _warm_point_valid && (lastConverged || !_options.recovery.fallback);
+    const bool cachedSource =
+        _options.source == ISPDStartSource::PreviousFinal ||
+        _options.source == ISPDStartSource::PreviousMiddle;
+    return cachedSource && _warm_point_valid &&
+           _warm_point_source == static_cast<int>(_options.source) &&
+           (lastConverged || !_options.recovery.fallback);
   }
   template <typename T> void registerVertex(T *v) {
     _vertices.registerVertex(v);

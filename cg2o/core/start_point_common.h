@@ -8,6 +8,7 @@
 #include <limits>
 #include <memory>
 #include <optimizable_graph.h>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -147,11 +148,14 @@ private:
       return true;
     }
     bool restore(int which) override {
-      v->setEstimate(saved[which]);
+      if (!saved[which])
+        return false;
+      v->setEstimate(*saved[which]);
       return true;
     }
     T *v;
-    Estimate saved[2];
+    // optional: the estimate type need not be default-constructible
+    std::optional<Estimate> saved[2];
   };
   struct DataSlot : Slot {
     explicit DataSlot(g2o::OptimizableGraph::Vertex *vertex) : v(vertex) {}

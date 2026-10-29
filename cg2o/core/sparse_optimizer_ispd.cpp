@@ -260,10 +260,15 @@ void SparseOptimizerISPD::setWarmStartMiddleStrategy(int strategy) {
 }
 
 void SparseOptimizerISPD::setWarmStartMiddleKappa(double kappa) {
+  if (!(kappa > 0.0) || !std::isfinite(kappa))
+    throw std::invalid_argument(
+        "warm-start middle kappa must be finite and > 0");
   _start_policy.options().middle.kappa = kappa;
 }
 
 void SparseOptimizerISPD::setWarmStartMiddleIteration(int iteration) {
+  if (iteration < 0)
+    throw std::invalid_argument("warm-start middle iteration must be >= 0");
   _start_policy.options().middle.iteration = iteration;
 }
 
@@ -276,10 +281,16 @@ void SparseOptimizerISPD::setWarmStartKappaStrategy(int strategy) {
 }
 
 void SparseOptimizerISPD::setWarmStartKappaFactor(double factor) {
+  if (!(factor > 0.0) || !std::isfinite(factor))
+    throw std::invalid_argument(
+        "warm-start kappa factor must be finite and > 0");
   _start_policy.options().kappa.factor = factor;
 }
 
 void SparseOptimizerISPD::setWarmStartKappaValue(double kappa) {
+  if (!(kappa > 0.0) || !std::isfinite(kappa))
+    throw std::invalid_argument(
+        "warm-start kappa value must be finite and > 0");
   _start_policy.options().kappa.value = kappa;
 }
 
@@ -338,6 +349,8 @@ void SparseOptimizerISPD::setWarmStartCenteringMode(int mode) {
 }
 
 void SparseOptimizerISPD::setWarmStartMiddleGap(double relativeGap) {
+  if (!(relativeGap > 0.0) || !std::isfinite(relativeGap))
+    throw std::invalid_argument("warm-start middle gap must be finite and > 0");
   _start_policy.options().middle.gap = relativeGap;
 }
 
@@ -352,6 +365,8 @@ void SparseOptimizerISPD::setWarmStartMiddleNeighbourhood(double lo,
 }
 
 void SparseOptimizerISPD::setWarmStartKappaGap(double relativeGap) {
+  if (!(relativeGap > 0.0) || !std::isfinite(relativeGap))
+    throw std::invalid_argument("warm-start kappa gap must be finite and > 0");
   _start_policy.options().kappa.gap = relativeGap;
 }
 

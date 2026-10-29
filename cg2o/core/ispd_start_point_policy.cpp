@@ -10,8 +10,6 @@ namespace cg2o {
 
 void ISPDStartPointPolicy::validate() const {
   const auto &o = _options;
-  if (o.source == ISPDStartSource::Cold)
-    return;
   auto positive = [](double x) { return warm_start::positiveFinite(x); };
   auto nonnegative = [](double x) { return x >= 0.0 && std::isfinite(x); };
   auto inRange = [](auto value, int last) {
@@ -153,11 +151,7 @@ void ISPDStartPointPolicy::restoreRollback(SparseOptimizerISPD &solver) {
 bool ISPDStartPointPolicy::prepareStartingPoint(SparseOptimizerISPD &solver) {
   _last_reset_rows = 0;
   const bool current = _options.source == ISPDStartSource::CurrentGraph;
-  const bool use =
-      current ||
-      (_options.source != ISPDStartSource::Cold && _warm_point_valid &&
-       (solver._last_converged || !_options.recovery.fallback));
-  if (!use) {
+  if (!current && !available(solver._last_converged)) {
     _vertices.discard(VertexEstimateCache::Cached);
     _vertices.discard(VertexEstimateCache::Rollback);
     solver.coldStart();

@@ -33,10 +33,10 @@ struct is_eq_edge<
 template <typename T>
 void ISPDStartPointPolicy::addShiftSequence(SparseOptimizerISPD &solver,
                                             const std::vector<T *> &stages) {
+  _shift_members.check(stages); // also rejects a null entry in a short one
   if (stages.size() < 2) {
     return; // nothing to shift
   }
-  _shift_members.check(stages);
   for (auto *p : stages) {
     if constexpr (std::is_base_of_v<g2o::OptimizableGraph::Vertex, T>) {
       if (solver.vertex(p->id()) != p ||

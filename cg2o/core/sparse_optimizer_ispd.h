@@ -369,6 +369,8 @@ public:
   //!    kappa): for warm-start policies written by the application (load
   //!    any point, then optimize); push, centring, kappa strategy, change
   //!    detector, shift and the breakdown safeguards still apply
+  //! A point stored under strategy 1 is not used by strategy 2 and vice
+  //! versa: the first solve after a switch starts cold.
   void setWarmStartStrategy(int strategy);
   //! shift the restored point one stage (MPC); needs registered sequences
   void setWarmStartShift(bool shift);
@@ -502,9 +504,11 @@ public:
   }
   //! forget the stored point; the next solve starts cold
   void resetWarmStart();
-  //! true if a stored point exists that the next optimize() can use
+  //! true if a point stored for the current strategy (1 or 2) exists that
+  //! the next optimize() can use; always false for strategies 0 and 3
   bool warmStartAvailable() const;
-  //! what the last optimize() started from: 0 cold, 1 final, 2 middle
+  //! what the last optimize() started from: 0 cold, 1 final, 2 middle,
+  //! 3 current values
   int lastWarmStartUsed() const;
   //! barrier parameter at the end of the last optimize()
   double lastKappa() const;
