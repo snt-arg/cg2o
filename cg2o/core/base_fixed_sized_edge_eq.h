@@ -140,7 +140,8 @@ void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::initializeJacobians() {
 template <int D, typename E, typename... VertexTypes>
 void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::computeError() {
   if (this->_vertices.empty() ||
-      this->_vertices.size() < sizeof...(VertexTypes) + 1) {
+      this->_vertices.size() < sizeof...(VertexTypes) + 1 ||
+      !this->_vertices.back()) {
     throw std::runtime_error("Lagrangian vertex missing or invalid index");
   }
 
@@ -324,7 +325,8 @@ void BaseFixedSizedEdgeEq<D, E, VertexTypes...>::setLagrangeMultiplier(
     const Eigen::Matrix<double, D, 1> &lagrangeMultiplier) {
   // Ensure the last vertex is of type VertexLagrangeMultiplier<D>
   if (this->_vertices.empty() ||
-      this->_vertices.size() < sizeof...(VertexTypes) + 1) {
+      this->_vertices.size() < sizeof...(VertexTypes) + 1 ||
+      !this->_vertices.back()) {
     throw std::runtime_error("Lagrangian vertex missing or invalid index");
   }
 
@@ -349,7 +351,8 @@ Eigen::Matrix<double, D, 1>
 BaseFixedSizedEdgeEq<D, E, VertexTypes...>::lagrangeMultiplier() const {
   // Ensure the vertex list is valid
   if (this->_vertices.empty() ||
-      this->_vertices.size() < sizeof...(VertexTypes) + 1) {
+      this->_vertices.size() < sizeof...(VertexTypes) + 1 ||
+      !this->_vertices.back()) {
     throw std::runtime_error("Lagrangian vertex missing or invalid index");
   }
 

@@ -343,72 +343,21 @@ void SparseOptimizerAL::updateMultipliers(EdgeType &edge) {
   auto error = edge.error();
   auto rho = edge.rho();
   auto multiplier = edge.lagrangeMultiplier();
-  Eigen::Matrix<double, D, 1> rho_bar;
-  auto constraints_violation_prev = edge.information().diagonal().segment(0, D);
-  auto constraints_violation = error.segment(0, D);
-
-  double rho_min;
-  double rho_max;
-  double rho_upate_factor;
-  if constexpr (is_ineq) {
-    rho_min = _rho_min;
-    rho_max = _rho_max;
-    rho_upate_factor = _rho_update_factor;
-  } else if constexpr (is_eq) {
-    rho_min = _rho_min;
-    rho_max = _rho_max;
-    rho_upate_factor = _rho_update_factor;
-  }
 
   for (int i = 0; i < D; ++i) {
-    [[maybe_unused]] double x_d = 0, x_i = 0;
-
-    // update mulitplier
+    // first-order multiplier update
     if constexpr (is_ineq) {
       multiplier[i] = std::max(0.0, multiplier[i] + 2 * rho[i] * error[i]);
     } else if constexpr (is_eq) {
       multiplier[i] = multiplier[i] + 2 * rho[i] * error[i];
     }
 
-    switch (2) {
-    case 1:
-
-      if constexpr (is_ineq) {
-        constraints_violation = constraints_violation.array().min(0.0);
-      } else if constexpr (is_eq) {
-        constraints_violation = constraints_violation.cwiseAbs();
-      }
-
-      if constexpr (is_ineq) {
-        rho_bar = edge.slackVariable();
-      } else if constexpr (is_eq) {
-        rho_bar = constraints_violation_prev.segment(D, D);
-      }
-
-      if (constraints_violation_prev[i] > constraints_violation[i])
-        x_d = 1 - constraints_violation[i] / constraints_violation_prev[i];
-
-      if (constraints_violation[i] > constraints_violation_prev[i])
-        x_i = 1 - constraints_violation_prev[i] / constraints_violation[i];
-      rho[i] = rho_bar[i] + x_d * (rho_max - rho_bar[i]);
-      rho_bar[i] = rho_bar[i] + x_d * (rho_max - rho_bar[i]);
-
-      if constexpr (is_ineq) {
-        edge.setConstraintViolationPrev(constraints_violation);
-        edge.setSlackVariable(rho_bar);
-      } else if constexpr (is_eq) {
-        edge.setConstraintViolationPrev(constraints_violation);
-        edge.setConstraintViolationPrev(std::move(rho_bar), D);
-      }
-      break;
-    case 2:
-      rho[i] = rho_upate_factor * rho[i];
-      if (rho[i] < rho_min)
-        rho[i] = rho_min;
-      if (rho[i] > rho_max)
-        rho[i] = rho_max;
-      break;
-    }
+    // multiplicative penalty update, limited to [rho_min, rho_max]
+    rho[i] = _rho_update_factor * rho[i];
+    if (rho[i] < _rho_min)
+      rho[i] = _rho_min;
+    if (rho[i] > _rho_max)
+      rho[i] = _rho_max;
   }
 
   edge.setLagrangeMultiplier(multiplier);

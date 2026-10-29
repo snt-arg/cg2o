@@ -98,9 +98,14 @@ bool SparseOptimizerForConstraints<Derived>::removeEdge(
   if (!edges().count(edge))
     return false;
   auto *e = static_cast<OptimizableGraph::Edge *>(edge);
-  if (_edgeEqSet.count(e) && !e->vertices().empty())
-    std::erase(_vEqLagrangeMultipliers,
-               static_cast<OptimizableGraph::Vertex *>(e->vertices().back()));
+  OptimizableGraph::Vertex *multiplier = nullptr; // created by addEdgeEq()
+  std::size_t multiplierSlot = 0;
+  if (_edgeEqSet.count(e) && !e->vertices().empty()) {
+    multiplierSlot = e->vertices().size() - 1;
+    multiplier =
+        static_cast<OptimizableGraph::Vertex *>(e->vertices()[multiplierSlot]);
+    std::erase(_vEqLagrangeMultipliers, multiplier);
+  }
   _edgeEqSet.erase(e);
   _edgeIneqSet.erase(e);
   updateMultipliersEqFunctionMap.erase(e);
@@ -108,7 +113,22 @@ bool SparseOptimizerForConstraints<Derived>::removeEdge(
   // update the active structure in place: optimize() can follow directly,
   // without initializeOptimization()
   removeFromActiveStructure(e);
-  return g2o::SparseOptimizer::removeEdge(edge);
+  if (!g2o::SparseOptimizer::removeEdge(edge))
+    return false;
+  // the multiplier goes with its edge, unless another edge still uses it or
+  // it is the vertex being removed (g2o removes its edges first)
+  if (multiplier && multiplier->edges().empty() &&
+      std::find(_removing_vertices.begin(), _removing_vertices.end(),
+                multiplier) == _removing_vertices.end() &&
+      static_cast<Derived *>(this)->removeVertex(multiplier)) {
+#if !G2O_DELETE_IMPLICITLY_OWNED_OBJECTS
+    // the edge stays with the caller (with implicit ownership g2o deleted
+    // it and the multiplier)
+    e->setVertex(multiplierSlot, nullptr);
+    delete multiplier;
+#endif
+  }
+  return true;
 }
 
 template <typename Derived>
@@ -162,7 +182,10 @@ bool SparseOptimizerForConstraints<Derived>::removeVertex(HyperGraph::Vertex *v,
   std::erase(_vEqLagrangeMultipliers,
              static_cast<OptimizableGraph::Vertex *>(v));
   invalidateActiveStructure();
-  return g2o::SparseOptimizer::removeVertex(v, detach);
+  _removing_vertices.push_back(v);
+  const bool removed = g2o::SparseOptimizer::removeVertex(v, detach);
+  _removing_vertices.pop_back();
+  return removed;
 }
 
 template <typename Derived>

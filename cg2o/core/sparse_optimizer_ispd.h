@@ -314,46 +314,17 @@ public:
   double constraintsBacktracking(const double *update);
 
   // ==========================================================================
-  // Warm start
+  // Starting point (warm start)
   // ==========================================================================
-  //
-  // ISPD uses g(x) <= 0, g(x) + s = 0, s > 0, lambda > 0,
-  // and s_i*lambda_i approximately 1/kappa. Reuse must respect all of them.
-  // 0: cold duals/slacks/barrier, application-provided x.
-  // 1: previous final point; usually efficient for small perturbations.
-  // 2: previous middle point; a heuristic for avoiding boundary blocking.
-  // 3: current values supplied by an application warm-start policy.
-  //
-  // The start point is managed by startPointPolicy() (ISPDStartPointPolicy):
-  // the setWarmStart*() functions below write its options() and validate
-  // each value; the options can also be set directly, as one struct:
-  //   opt.startPointPolicy().options().source = ISPDStartSource::PreviousFinal;
-  //   opt.startPointPolicy().options().shift.enabled = true;
-  // initializeOptimization() only builds the active structure.
-  //
-  // Owned estimate copies coexist with g2o push/pop backups. Insert
-  // vertices using their concrete pointer type, or register them explicitly
-  // with registerWarmStartVertex<T>(); serialized estimate data is a fallback.
-  // Manifold estimates are copied as estimates, never as tangent increments.
-  //
-  // Register disjoint ordered stage sequences for MPC shifts. Fixed vertices
-  // retain the latest measurement. Replicating the last stage is a generic
-  // tail heuristic, not a terminal-feasibility guarantee. Use the post-shift
-  // callback for a model-consistent terminal rollout. Removing graph objects
-  // invalidates the warm cache and clears shift registrations and callbacks.
-  //
-  // Invalid auxiliary pairs are repaired even if optional pushes, centering,
-  // and change detection are off. Failure rollback restores x, nu, s, lambda,
-  // and kappa; an optional retry uses cold duals from that restored x. Retry
-  // work counts toward optimize()'s returned total (up to twice the budget).
-  //
-  // No strategy or numerical threshold is universally best. Compare objective,
-  // primal feasibility, stationarity, complementarity, tail runtime and retries
-  // on the same prescribed problem sequence.
+  // Where a solve starts is decided by startPointPolicy(); its options and
+  // their meaning are documented in ispd_start_point_policy.h. Options are
+  // validated when optimize() starts. The functions below need the graph
+  // (shift sequences) or report on the last optimize().
   //
   // Typical receding-horizon use:
-  //   opt.setWarmStartStrategy(1);
-  //   opt.setWarmStartShift(true);
+  //   auto &start = opt.startPointPolicy().options();
+  //   start.source = ISPDStartSource::PreviousFinal;
+  //   start.shift.enabled = true;
   //   opt.addWarmStartShiftSequence(states);
   //   opt.addWarmStartShiftSequence(inputs);
   //   opt.addWarmStartShiftSequence(dynamicsEdges);
@@ -363,133 +334,6 @@ public:
 
   ISPDStartPointPolicy &startPointPolicy() { return _start_policy; }
   const ISPDStartPointPolicy &startPointPolicy() const { return _start_policy; }
-
-  //! 0: cold (default), 1: final iterate, 2: middle iterate,
-  //! 3: the values currently in the graph (x, nu, lambda, s and the current
-  //!    kappa): for warm-start policies written by the application (load
-  //!    any point, then optimize); push, centring, kappa strategy, change
-  //!    detector, shift and the breakdown safeguards still apply
-  //! A point stored under strategy 1 is not used by strategy 2 and vice
-  //! versa: the first solve after a switch starts cold.
-  void setWarmStartStrategy(int strategy);
-  //! shift the restored point one stage (MPC); needs registered sequences
-  void setWarmStartShift(bool shift);
-  //! stages per shift (default 1): stage k takes stage k + n, the last n
-  //! stages take the last one. Use n > 1 when one control period spans n
-  //! stages (e.g. a space-domain horizon at speed: n ~ v dt / ds).
-  void setWarmStartShiftSteps(int n);
-  int warmStartShiftSteps() const;
-  //! restore (and shift) the primal variables too (default true)
-  void setWarmStartPrimal(bool primal);
-  //! which iterate strategy 2 stores (always the last one that qualifies;
-  //! the first iterate is stored if none qualifies):
-  //! 0: kappa used in the iteration <= middle kappa
-  //! 1: measured duality-gap kappa m / sum(s_i lambda_i) <= middle kappa
-  //! 2: iteration index < middle iteration
-  //! 3 (default): relative duality gap s'lambda / (1 + |F|) >= middle gap
-  //!    (F = robust objective / 2). Inspired by approximate-center LP warm
-  //!    starts; 3e-2 is a tunable heuristic. This quantity is affected by
-  //!    objective offsets and scaling and is not an NLP optimality certificate.
-  void setWarmStartMiddleStrategy(int strategy);
-  void setWarmStartMiddleGap(double relativeGap);
-  //! optional centrality preference for the middle point: among the
-  //! qualifying iterates, the last one inside the neighbourhood N(lo, hi) =
-  //! { lo <= s_i lambda_i / mu <= hi for all rows } is stored; if none is
-  //! inside, the last qualifying one (Gondzio & Grothey store points in
-  //! N(0.5, 2)). lo = 0, hi = inf (default): no preference.
-  void setWarmStartMiddleNeighbourhood(double lo, double hi);
-  //! middle strategies 0, 1: middle kappa (default 30)
-  void setWarmStartMiddleKappa(double kappa);
-  void setWarmStartMiddleIteration(int iteration);
-  //! kappa of the warm start (clamped to [kappa_initial, kappa_final]):
-  //! 0: kappa stored with the point * factor (default)
-  //! 1: duality gap of the warm point, factor * m / sum(s_i lambda_i): the
-  //!    kappa for which the point is on the central path on average
-  //!    (s_i lambda_i = 1/kappa)
-  //! 2: constant warm-start kappa value
-  //! 3: relative-gap target: kappa = m / (gap * (1 + |F|)), i.e. mu0 =
-  //!    gap (1 + |F|) / m at the warm primal. This is a heuristic adaptation
-  //!    of LP relative-gap initialization, not a general NLP guarantee.
-  void setWarmStartKappaStrategy(int strategy);
-  void setWarmStartKappaFactor(double factor);
-  void setWarmStartKappaValue(double kappa);
-  void setWarmStartKappaGap(double relativeGap);
-  //! lower bound for s and lambda of the warm point (0: off, default)
-  void setWarmStartPush(double push);
-  //! Independent floors, in the units of s and lambda respectively.
-  void setWarmStartSlackPush(double push);
-  void setWarmStartMultiplierPush(double push);
-  //! 0: retain slack; 1: s = max(-g(x), slack push, 1e-12).
-  //! Projection reduces the slack residual, but changes complementarity.
-  void setWarmStartSlackProjection(int strategy);
-  //! centrality band beta >= 1 for s_i lambda_i kappa (0: off, default);
-  //! same as setWarmStartCenteringBand(1 / beta, beta)
-  void setWarmStartCentering(double beta);
-  //! re-centre rows with s_i lambda_i kappa outside [lo, hi] onto the
-  //! nearest band edge (lo = hi = 1: exactly centred; lo = 0, hi = inf: off)
-  void setWarmStartCenteringBand(double lo, double hi);
-  //! how a row is moved into the band:
-  //! 0 (default): s_i and lambda_i are scaled by the same factor, which
-  //!    keeps s_i / lambda_i unless explicit component floors intervene
-  //! 1: legacy s_i < lambda_i rule; depends on units (not an active-set test)
-  //! 2: preserve s_i, adjust lambda_i (useful with slack projection)
-  //! 3: preserve lambda_i, adjust s_i
-  //! Floors take precedence if the requested band and floors conflict.
-  void setWarmStartCenteringMode(int mode);
-  //! true (default): after a solve that did not converge (iteration cap or
-  //! linear-solver failure) the next solve starts cold
-  void setWarmStartFallback(bool fallback);
-  //! true (default): if a warm-started solve fails (linear-solver failure
-  //! after divergence), optimize() puts the starting point back and solves
-  //! again with a cold start of nu, lambda, s and kappa (worst case twice the
-  //! iterations). With false the starting point is put back and optimize()
-  //! returns 0, as for any failed solve.
-  void setWarmStartRetry(bool retry);
-  //! a solve that does not converge and ends with a constraint violation
-  //! above factor * max(violation at its start, epsilon_constraint) counts as
-  //! broken down, like a linear-solver failure: the starting point is put
-  //! back (and retried cold if it was a warm start). 0: only failures count.
-  //! Default 10. Applies whenever a warm-start strategy (1, 2) is selected.
-  void setWarmStartDivergenceFactor(double factor);
-  double warmStartDivergenceFactor() const;
-  //! change detector: a warm row whose g at the start of the solve differs
-  //! from g at the stored iterate (both at the same, shifted, primal) by
-  //! more than tol * max(1, |g_stored|, s) is treated as a changed
-  //! constraint (see setWarmStartResetMode). 0: off. Default 0.5.
-  void setWarmStartResetTolerance(double tolerance);
-  //! which reference the change detector compares g with:
-  //! 0: g of the stored iterate (only a change of the constraint data),
-  //! 1 (default): -s, the primal residual |g + s|. For a converged (final)
-  //!    point s = -g, so both tests flag the same rows. For a middle point
-  //!    test 1 also flags rows that were not yet consistent, and the solve
-  //!    then starts with cold duals from the middle primal; in the tests
-  //!    this made the middle strategy robust to sudden obstacles.
-  //! 2: |g+s| / max(|g|, |s|, smallest normal double): a relative residual
-  //!    without the unit offset. Invariant under positive constraint-row
-  //!    rescaling, away from the numerical lower bound. Useful for small
-  //!    bounds.
-  void setWarmStartResetTest(int test);
-  int warmStartResetTest() const;
-  //! 0: flagged rows centred at mu, 1: flagged rows get cold values,
-  //! 2 (default): any flagged row -> cold start of nu, lambda, s and kappa
-  //! (primal stays warm)
-  void setWarmStartResetMode(int mode);
-  int warmStartResetMode() const;
-
-  int warmStartStrategy() const;
-  bool warmStartShift() const;
-  bool warmStartPrimal() const;
-  int warmStartMiddleStrategy() const;
-  double warmStartMiddleKappa() const;
-  int warmStartMiddleIteration() const;
-  int warmStartKappaStrategy() const;
-  double warmStartKappaFactor() const;
-  double warmStartKappaValue() const;
-  double warmStartPush() const;
-  double warmStartCentering() const;
-  bool warmStartFallback() const;
-  bool warmStartRetry() const;
-  double warmStartResetTolerance() const;
 
   //! registers one stage sequence for the MPC shift (stage 0 first)
   template <typename T>
@@ -504,11 +348,11 @@ public:
   }
   //! forget the stored point; the next solve starts cold
   void resetWarmStart();
-  //! true if a point stored for the current strategy (1 or 2) exists that
-  //! the next optimize() can use; always false for strategies 0 and 3
+  //! true if a point stored for the selected source (PreviousFinal or
+  //! PreviousMiddle) exists that the next optimize() can use
   bool warmStartAvailable() const;
-  //! what the last optimize() started from: 0 cold, 1 final, 2 middle,
-  //! 3 current values
+  //! what the last optimize() started from, as int(ISPDStartSource):
+  //! 0 cold, 1 final, 2 middle, 3 current values
   int lastWarmStartUsed() const;
   //! barrier parameter at the end of the last optimize()
   double lastKappa() const;
@@ -544,6 +388,8 @@ public:
 public:
   //
 
+  // The integer strategies below are range-checked when optimize() starts
+  // (std::invalid_argument).
   void setStepSizeStrategy(int strategy);
   void setIneqBacktrackingStepMin(double value);
   void setAuxBacktrackingStepMin(double value);

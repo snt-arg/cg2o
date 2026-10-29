@@ -62,6 +62,10 @@ public:
   SparseOptimizerForConstraints(SparseOptimizerForConstraints &&) = delete;
   SparseOptimizerForConstraints &
   operator=(SparseOptimizerForConstraints &&) = delete;
+  //! removing an equality edge also removes the multiplier vertex that
+  //! addEdgeEq() created for it, so its id can be used again. Without
+  //! implicit ownership (G2O_NO_IMPLICIT_OWNERSHIP_OF_OBJECTS) the multiplier
+  //! is deleted and the multiplier slot of the edge is reset to nullptr.
   bool removeEdge(g2o::HyperGraph::Edge *edge) override;
   bool removeVertex(g2o::HyperGraph::Vertex *vertex,
                     bool detach = false) override;
@@ -230,6 +234,9 @@ protected:
   // Removes one edge from the active structure, leaving it exactly as
   // initializeOptimization() would rebuild it without that edge.
   void removeFromActiveStructure(g2o::OptimizableGraph::Edge *edge);
+  // vertices inside removeVertex(): removeEdge() leaves such a multiplier
+  // to the removal in progress
+  std::vector<const g2o::HyperGraph::Vertex *> _removing_vertices;
   bool attachConstraintEdge(g2o::OptimizableGraph::Edge *edge);
   template <int D, typename E, typename... VertexTypes>
   VertexLagrangeMultiplier<D> *

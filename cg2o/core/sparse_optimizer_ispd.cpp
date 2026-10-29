@@ -63,6 +63,22 @@ void SparseOptimizerISPD::validateSettings() const {
     throw std::invalid_argument(
         "ISPD needs finite positive kappa and auxiliary initialization; "
         "kappa_final >= kappa_initial");
+  // an unknown init strategy would silently do nothing (lambda) or act as 0
+  // (kappa); the others would throw in the middle of a solve
+  auto inRange = [](int value, int last) {
+    return value >= 0 && value <= last;
+  };
+  if (!inRange(_step_size_strategy, 4) || !inRange(_init_kappa_strategy, 1) ||
+      !inRange(_update_kappa_strategy, 3) ||
+      !inRange(_init_slack_strategy, 2) ||
+      !inRange(_init_lagrange_strategy, 1) ||
+      !inRange(_ineq_prediction_strategy, 1) ||
+      !inRange(_ineq_prediction_step_strategy, 3) ||
+      !inRange(_keep_aux_positive_strategy, 2))
+    throw std::invalid_argument(
+        "ISPD strategy out of range: step size 0-4, init kappa 0-1, update "
+        "kappa 0-3, init slack 0-2, init lagrange 0-1, prediction 0-1, "
+        "prediction step 0-3, keep aux positive 0-2");
   _start_policy.validate();
 }
 
@@ -222,154 +238,6 @@ double SparseOptimizerISPD::auxCorrectionValue() const {
   return _aux_correction_value;
 }
 
-// Warm-start setters: options of the start-point policy
-void SparseOptimizerISPD::setWarmStartStrategy(int strategy) {
-  if (strategy < 0 || strategy > 3) {
-    throw std::invalid_argument("[Error] warm start strategy: 0 cold, 1 final, "
-                                "2 middle, 3 current values");
-  }
-  _start_policy.options().source = static_cast<ISPDStartSource>(strategy);
-}
-
-void SparseOptimizerISPD::setWarmStartShift(bool shift) {
-  _start_policy.options().shift.enabled = shift;
-}
-
-void SparseOptimizerISPD::setWarmStartShiftSteps(int n) {
-  if (n < 0) {
-    throw std::invalid_argument("[Error] warm start shift steps must be >= 0");
-  }
-  _start_policy.options().shift.steps = n;
-}
-
-int SparseOptimizerISPD::warmStartShiftSteps() const {
-  return _start_policy.options().shift.steps;
-}
-
-void SparseOptimizerISPD::setWarmStartPrimal(bool primal) {
-  _start_policy.options().warmPrimal = primal;
-}
-
-void SparseOptimizerISPD::setWarmStartMiddleStrategy(int strategy) {
-  if (strategy < 0 || strategy > 3) {
-    throw std::invalid_argument("[Error] warm start middle strategy: 0 kappa, "
-                                "1 duality-gap kappa, 2 iteration, "
-                                "3 relative gap");
-  }
-  _start_policy.options().middle.rule = static_cast<MiddlePointRule>(strategy);
-}
-
-void SparseOptimizerISPD::setWarmStartMiddleKappa(double kappa) {
-  if (!(kappa > 0.0) || !std::isfinite(kappa))
-    throw std::invalid_argument(
-        "warm-start middle kappa must be finite and > 0");
-  _start_policy.options().middle.kappa = kappa;
-}
-
-void SparseOptimizerISPD::setWarmStartMiddleIteration(int iteration) {
-  if (iteration < 0)
-    throw std::invalid_argument("warm-start middle iteration must be >= 0");
-  _start_policy.options().middle.iteration = iteration;
-}
-
-void SparseOptimizerISPD::setWarmStartKappaStrategy(int strategy) {
-  if (strategy < 0 || strategy > 3) {
-    throw std::invalid_argument("[Error] warm start kappa strategy: 0 stored, "
-                                "1 duality gap, 2 constant, 3 relative gap");
-  }
-  _start_policy.options().kappa.rule = static_cast<WarmKappaRule>(strategy);
-}
-
-void SparseOptimizerISPD::setWarmStartKappaFactor(double factor) {
-  if (!(factor > 0.0) || !std::isfinite(factor))
-    throw std::invalid_argument(
-        "warm-start kappa factor must be finite and > 0");
-  _start_policy.options().kappa.factor = factor;
-}
-
-void SparseOptimizerISPD::setWarmStartKappaValue(double kappa) {
-  if (!(kappa > 0.0) || !std::isfinite(kappa))
-    throw std::invalid_argument(
-        "warm-start kappa value must be finite and > 0");
-  _start_policy.options().kappa.value = kappa;
-}
-
-void SparseOptimizerISPD::setWarmStartPush(double push) {
-  if (!(push >= 0.0) || !std::isfinite(push))
-    throw std::invalid_argument("warm-start push must be finite and >= 0");
-  _start_policy.options().push.both = push;
-}
-
-void SparseOptimizerISPD::setWarmStartSlackPush(double push) {
-  if (!(push >= 0.0) || !std::isfinite(push))
-    throw std::invalid_argument("slack push must be finite and >= 0");
-  _start_policy.options().push.slack = push;
-}
-
-void SparseOptimizerISPD::setWarmStartMultiplierPush(double push) {
-  if (!(push >= 0.0) || !std::isfinite(push))
-    throw std::invalid_argument("multiplier push must be finite and >= 0");
-  _start_policy.options().push.multiplier = push;
-}
-
-void SparseOptimizerISPD::setWarmStartSlackProjection(int strategy) {
-  if (strategy < 0 || strategy > 1)
-    throw std::invalid_argument("slack projection: 0 retain, 1 project to -g");
-  _start_policy.options().push.projectSlack = strategy == 1;
-}
-
-void SparseOptimizerISPD::setWarmStartCentering(double beta) {
-  if (!std::isfinite(beta) || (beta != 0.0 && beta < 1.0)) {
-    throw std::invalid_argument(
-        "[Error] warm start centering: beta must be 0 (off) or >= 1");
-  }
-  if (beta == 0.0) {
-    setWarmStartCenteringBand(0.0, std::numeric_limits<double>::infinity());
-  } else {
-    setWarmStartCenteringBand(1.0 / beta, beta);
-  }
-}
-
-void SparseOptimizerISPD::setWarmStartCenteringBand(double lo, double hi) {
-  if (!(lo >= 0.0) || !(hi >= 1.0) || lo > 1.0) {
-    throw std::invalid_argument(
-        "[Error] warm start centering band: need 0 <= lo <= 1 <= hi");
-  }
-  _start_policy.options().centering.lo = lo;
-  _start_policy.options().centering.hi = hi;
-}
-
-void SparseOptimizerISPD::setWarmStartCenteringMode(int mode) {
-  if (mode < 0 || mode > 3) {
-    throw std::invalid_argument(
-        "warm start centering mode: 0 ratio, "
-        "1 legacy, 2 preserve slack, 3 preserve multiplier");
-  }
-  _start_policy.options().centering.mode = static_cast<CenteringMode>(mode);
-}
-
-void SparseOptimizerISPD::setWarmStartMiddleGap(double relativeGap) {
-  if (!(relativeGap > 0.0) || !std::isfinite(relativeGap))
-    throw std::invalid_argument("warm-start middle gap must be finite and > 0");
-  _start_policy.options().middle.gap = relativeGap;
-}
-
-void SparseOptimizerISPD::setWarmStartMiddleNeighbourhood(double lo,
-                                                          double hi) {
-  if (!(lo >= 0.0) || !(hi >= 1.0) || lo > 1.0) {
-    throw std::invalid_argument(
-        "[Error] warm start middle neighbourhood: need 0 <= lo <= 1 <= hi");
-  }
-  _start_policy.options().middle.neighbourhoodLo = lo;
-  _start_policy.options().middle.neighbourhoodHi = hi;
-}
-
-void SparseOptimizerISPD::setWarmStartKappaGap(double relativeGap) {
-  if (!(relativeGap > 0.0) || !std::isfinite(relativeGap))
-    throw std::invalid_argument("warm-start kappa gap must be finite and > 0");
-  _start_policy.options().kappa.gap = relativeGap;
-}
-
 const SparseOptimizerISPD::PointStats &
 SparseOptimizerISPD::lastStartStats() const {
   return _start_stats;
@@ -425,99 +293,10 @@ SparseOptimizerISPD::PointStats SparseOptimizerISPD::pointStats(bool withCost) {
   return st;
 }
 
-void SparseOptimizerISPD::setWarmStartFallback(bool fallback) {
-  _start_policy.options().recovery.fallback = fallback;
-}
-
-void SparseOptimizerISPD::setWarmStartRetry(bool retry) {
-  _start_policy.options().recovery.retry = retry;
-}
-
-void SparseOptimizerISPD::setWarmStartResetTolerance(double tolerance) {
-  _start_policy.options().reset.tolerance = tolerance;
-}
-
-void SparseOptimizerISPD::setWarmStartDivergenceFactor(double factor) {
-  _start_policy.options().recovery.divergenceFactor = factor;
-}
-
-double SparseOptimizerISPD::warmStartDivergenceFactor() const {
-  return _start_policy.options().recovery.divergenceFactor;
-}
-
 bool SparseOptimizerISPD::lastRestored() const {
   return _start_policy.lastRestored();
 }
 
-void SparseOptimizerISPD::setWarmStartResetTest(int test) {
-  if (test < 0 || test > 2) {
-    throw std::invalid_argument(
-        "warm start reset test: 0 changed g, 1 residual with unit offset, 2 "
-        "relative slack residual");
-  }
-  _start_policy.options().reset.test = static_cast<ResetTest>(test);
-}
-
-int SparseOptimizerISPD::warmStartResetTest() const {
-  return static_cast<int>(_start_policy.options().reset.test);
-}
-
-void SparseOptimizerISPD::setWarmStartResetMode(int mode) {
-  if (mode < 0 || mode > 2) {
-    throw std::invalid_argument("[Error] warm start reset mode: 0 centred "
-                                "rows, 1 cold rows, 2 cold duals");
-  }
-  _start_policy.options().reset.mode = static_cast<ResetMode>(mode);
-}
-
-int SparseOptimizerISPD::warmStartResetMode() const {
-  return static_cast<int>(_start_policy.options().reset.mode);
-}
-
-// Warm-start getters
-int SparseOptimizerISPD::warmStartStrategy() const {
-  return static_cast<int>(_start_policy.options().source);
-}
-bool SparseOptimizerISPD::warmStartShift() const {
-  return _start_policy.options().shift.enabled;
-}
-bool SparseOptimizerISPD::warmStartPrimal() const {
-  return _start_policy.options().warmPrimal;
-}
-int SparseOptimizerISPD::warmStartMiddleStrategy() const {
-  return static_cast<int>(_start_policy.options().middle.rule);
-}
-double SparseOptimizerISPD::warmStartMiddleKappa() const {
-  return _start_policy.options().middle.kappa;
-}
-int SparseOptimizerISPD::warmStartMiddleIteration() const {
-  return _start_policy.options().middle.iteration;
-}
-int SparseOptimizerISPD::warmStartKappaStrategy() const {
-  return static_cast<int>(_start_policy.options().kappa.rule);
-}
-double SparseOptimizerISPD::warmStartKappaFactor() const {
-  return _start_policy.options().kappa.factor;
-}
-double SparseOptimizerISPD::warmStartKappaValue() const {
-  return _start_policy.options().kappa.value;
-}
-double SparseOptimizerISPD::warmStartPush() const {
-  return _start_policy.options().push.both;
-}
-double SparseOptimizerISPD::warmStartCentering() const {
-  const auto &centering = _start_policy.options().centering;
-  return centering.active() ? centering.hi : 0.0;
-}
-bool SparseOptimizerISPD::warmStartFallback() const {
-  return _start_policy.options().recovery.fallback;
-}
-bool SparseOptimizerISPD::warmStartRetry() const {
-  return _start_policy.options().recovery.retry;
-}
-double SparseOptimizerISPD::warmStartResetTolerance() const {
-  return _start_policy.options().reset.tolerance;
-}
 bool SparseOptimizerISPD::lastRetried() const {
   return _start_policy.lastRetried();
 }
@@ -846,7 +625,7 @@ int SparseOptimizerISPD::optimize(int iterations, bool online) {
 
   // starting point: cold (nu, lambda, s, kappa re-initialised) or warm
   // (cached point of the previous solve, optionally shifted), see
-  // setWarmStartStrategy(); uses _last_converged of the previous solve
+  // ISPDStartOptions::source; uses _last_converged of the previous solve
   const StartResult start = _start_policy.prepare(*this);
   _last_converged = false;
   _last_start_kappa = _kappa;

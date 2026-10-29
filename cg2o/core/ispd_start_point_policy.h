@@ -1,6 +1,32 @@
 // Start-point policy of SparseOptimizerISPD: from which numerical state a
 // solve begins, what is cached for the next solve, and how a broken-down
 // solve is undone. Graph structure stays with initializeOptimization().
+//
+// ISPD uses g(x) <= 0, g(x) + s = 0, s > 0, lambda > 0 and s_i lambda_i
+// approximately 1/kappa; a reused point must respect all of them. Invalid
+// pairs (s_i, lambda_i) are repaired even if floors, centring and change
+// detection are off. A broken-down solve is undone (x, nu, s, lambda and
+// kappa are put back) and, optionally, retried from that x with cold nu,
+// lambda, s and kappa; the retry counts toward optimize()'s returned total
+// (up to twice the budget).
+//
+// Estimates are copied as owned values (manifolds as estimates, never as
+// tangent increments) and coexist with g2o's push/pop backups. Vertices
+// inserted with their concrete type are registered automatically; others
+// need SparseOptimizerISPD::registerWarmStartVertex<T>(), or fall back to
+// the serialized estimate data.
+//
+// MPC shift: register disjoint ordered stage sequences with
+// SparseOptimizerISPD::addWarmStartShiftSequence(). Fixed vertices keep the
+// latest measurement. The last stages replicate the last one, a generic tail
+// heuristic and not a terminal-feasibility guarantee: use the post-shift
+// callback for a model-consistent terminal rollout. Removing graph objects
+// invalidates the cached point and clears the shift registrations and the
+// callback.
+//
+// No source or threshold is best in general. Compare objective, primal
+// feasibility, stationarity, complementarity, tail runtime and retries on
+// the same problem sequence.
 #ifndef CG2O_ISPD_START_POINT_POLICY_H
 #define CG2O_ISPD_START_POINT_POLICY_H
 
@@ -42,57 +68,87 @@ struct ISPDPointStats {
   int scaled = 0; //!< lambda/s components hit by the positivity safeguard
 };
 
-//! where the starting point of a solve comes from
+//! where the starting point of a solve comes from. A point stored under
+//! PreviousFinal is not used by PreviousMiddle and vice versa: the first
+//! solve after a switch starts cold.
 enum class ISPDStartSource {
-  Cold = 0,           //!< cold nu, lambda, s, kappa; application-provided x
-  PreviousFinal = 1,  //!< final iterate of the previous solve
-  PreviousMiddle = 2, //!< a selected earlier iterate of the previous solve
-  CurrentGraph = 3    //!< the values currently in the graph (application)
+  Cold = 0, //!< cold nu, lambda, s, kappa; application-provided x
+  //! final iterate of the previous solve; usually efficient for small
+  //! perturbations
+  PreviousFinal = 1,
+  //! an earlier iterate of the previous solve (see MiddlePointRule); a
+  //! heuristic for not starting on the boundary
+  PreviousMiddle = 2,
+  //! x, nu, lambda, s and the current kappa as they are in the graph, for
+  //! warm-start policies written by the application. Floors, centring, the
+  //! kappa rule, the change detector, the shift and the breakdown safeguards
+  //! still apply.
+  CurrentGraph = 3
 };
 
-//! which iterate PreviousMiddle stores (the last one that qualifies; the
-//! first iterate if none does)
+//! which iterate PreviousMiddle stores: the last one that qualifies, the
+//! first iterate if none does
 enum class MiddlePointRule {
-  BarrierKappa = 0,    //!< kappa used in the iteration <= middle kappa
-  DualityGapKappa = 1, //!< m / sum(s_i lambda_i) <= middle kappa
-  Iteration = 2,       //!< iteration index < middle iteration
-  RelativeGap = 3      //!< s'lambda / (1 + |F|) >= middle gap
+  BarrierKappa = 0,    //!< kappa used in the iteration <= middle.kappa
+  DualityGapKappa = 1, //!< measured m / sum(s_i lambda_i) <= middle.kappa
+  Iteration = 2,       //!< iteration index < middle.iteration
+  //! s'lambda / (1 + |F|) >= middle.gap, F = robust objective / 2. Inspired
+  //! by approximate-centre LP warm starts; it depends on objective offsets
+  //! and scaling and is not an NLP optimality certificate.
+  RelativeGap = 3
 };
 
 //! barrier parameter of a warm start, clamped to [kappa_initial,
 //! kappa_final]
 enum class WarmKappaRule {
-  PreviousTimesFactor = 0, //!< kappa stored with the point * factor
-  DualityGap = 1,          //!< factor * m / sum(s_i lambda_i)
-  Constant = 2,            //!< a fixed value
-  RelativeGap = 3          //!< m / (gap * (1 + |F|))
+  PreviousTimesFactor = 0, //!< kappa stored with the point * kappa.factor
+  //! kappa.factor * m / sum(s_i lambda_i): the kappa for which the point is
+  //! on the central path on average (s_i lambda_i = 1/kappa)
+  DualityGap = 1,
+  Constant = 2, //!< kappa.value
+  //! m / (kappa.gap * (1 + |F|)), i.e. mu0 = gap (1 + |F|) / m at the warm
+  //! primal: a heuristic adaptation of LP relative-gap initialization
+  RelativeGap = 3
 };
 
-//! how a pair is moved into the centring band
+//! how a row is moved into the centring band; floors take precedence if
+//! they conflict with the band
 enum class CenteringMode {
-  PreserveRatio = 0,     //!< s and lambda scaled by the same factor
+  //! s and lambda scaled by the same factor, which keeps s / lambda
+  PreserveRatio = 0,
   Legacy = 1,            //!< s < lambda rule; depends on units
-  PreserveSlack = 2,     //!< adjust lambda
+  PreserveSlack = 2,     //!< adjust lambda (useful with slack projection)
   PreserveMultiplier = 3 //!< adjust s
 };
 
-//! reference the change detector compares g with
+//! reference the change detector compares g at the start of the solve with
 enum class ResetTest {
-  StoredConstraint = 0,     //!< g of the stored iterate
-  SlackResidual = 1,        //!< -s, scaled by max(1, |ref|, s)
-  RelativeSlackResidual = 2 //!< -s, scaled by max(|g|, |s|)
+  //! g of the stored iterate: only a change of the constraint data, scaled
+  //! by max(1, |ref|, s)
+  StoredConstraint = 0,
+  //! -s (the residual |g + s|), scaled by max(1, |ref|, s). For a final
+  //! point s = -g, so it flags the same rows as StoredConstraint; for a
+  //! middle point it also flags rows that were not yet consistent, which
+  //! then start with cold duals (in the tests this made PreviousMiddle
+  //! robust to sudden obstacles).
+  SlackResidual = 1,
+  //! |g + s| / max(|g|, |s|): no unit offset, invariant under positive row
+  //! scaling; useful for small bounds
+  RelativeSlackResidual = 2
 };
 
 //! what happens to the rows the change detector flags
 enum class ResetMode {
   CentredRows = 0, //!< s = max(-g, sqrt(mu)), lambda = mu / s
   ColdRows = 1,    //!< cold values of the row
-  ColdDuals = 2    //!< any flagged row: cold nu, lambda, s, kappa
+  //! any flagged row: cold nu, lambda, s and kappa (x stays warm)
+  ColdDuals = 2
 };
 
-// All settings of the start-point policy. The setWarmStart*() setters of
-// SparseOptimizerISPD write these fields and validate each value; fields set
-// directly are validated when optimize() starts, whatever the source.
+// All settings of the start-point policy, set directly:
+//   opt.startPointPolicy().options().source = ISPDStartSource::PreviousFinal;
+// They are validated when optimize() starts (std::invalid_argument),
+// whatever the source.
 struct ISPDStartOptions {
   ISPDStartSource source = ISPDStartSource::Cold;
   //! restore (and shift) the primal variables too
@@ -102,37 +158,48 @@ struct ISPDStartOptions {
 
   struct Shift {
     bool enabled = false; //!< shift the registered stage sequences (MPC)
-    int steps = 1;        //!< stage k takes stage k + steps
+    //! stage k takes stage k + steps, the last steps stages the last one;
+    //! >= 0. Use steps > 1 when one control period spans several stages
+    //! (e.g. a space-domain horizon at speed: steps ~ v dt / ds).
+    int steps = 1;
   } shift;
 
   struct Middle {
     MiddlePointRule rule = MiddlePointRule::RelativeGap;
-    double kappa = 30.0;
-    int iteration = 2;
-    double gap = 3e-2;
-    //! preference for iterates inside N(lo, hi); lo = 0, hi = inf: none
+    double kappa = 30.0; //!< BarrierKappa, DualityGapKappa; > 0
+    int iteration = 2;   //!< Iteration; >= 0
+    double gap = 3e-2;   //!< RelativeGap, a tunable heuristic; > 0
+    //! among the qualifying iterates, prefer the last one inside N(lo, hi) =
+    //! { lo <= s_i lambda_i / mu <= hi for all rows } (Gondzio & Grothey
+    //! store points in N(0.5, 2)). 0 <= lo <= 1 <= hi; lo = 0, hi = inf:
+    //! no preference.
     double neighbourhoodLo = 0.0;
     double neighbourhoodHi = std::numeric_limits<double>::infinity();
   } middle;
 
   struct Kappa {
     WarmKappaRule rule = WarmKappaRule::PreviousTimesFactor;
-    double factor = 1.0;
-    double value = 100.0;
-    double gap = 1e-3;
+    double factor = 1.0;  //!< PreviousTimesFactor, DualityGap; > 0
+    double value = 100.0; //!< Constant; > 0
+    double gap = 1e-3;    //!< RelativeGap; > 0
   } kappa;
 
+  //! floors of the warm point, in the units of s and lambda (0: off)
   struct Floors {
-    double both = 0.0;         //!< lower bound for s and lambda (0: off)
-    double slack = 0.0;        //!< lower bound for s, in the units of s
-    double multiplier = 0.0;   //!< lower bound for lambda
-    bool projectSlack = false; //!< s = max(-g(x), slack floor, 1e-12)
+    double both = 0.0;       //!< lower bound for s and lambda
+    double slack = 0.0;      //!< lower bound for s
+    double multiplier = 0.0; //!< lower bound for lambda
+    //! s = max(-g(x), slack floor, 1e-12): reduces the slack residual, but
+    //! changes complementarity
+    bool projectSlack = false;
     double slackFloor() const { return std::max(both, slack); }
     double multiplierFloor() const { return std::max(both, multiplier); }
   } push;
 
   struct Centering {
-    //! band for s_i lambda_i kappa; lo = 0, hi = inf: off
+    //! rows with s_i lambda_i kappa outside [lo, hi] are moved onto the
+    //! nearest band edge. 0 <= lo <= 1 <= hi; lo = hi = 1: exactly centred;
+    //! lo = 0, hi = inf: off. A symmetric band beta >= 1 is [1/beta, beta].
     double lo = 0.0;
     double hi = std::numeric_limits<double>::infinity();
     CenteringMode mode = CenteringMode::PreserveRatio;
@@ -142,16 +209,26 @@ struct ISPDStartOptions {
   } centering;
 
   struct Reset {
-    double tolerance = 0.5; //!< 0: change detector off
+    //! change detector: a warm row whose g at the start of the solve differs
+    //! from the reference (see ResetTest) by more than tolerance * scale is a
+    //! changed constraint, handled by mode. 0: off.
+    double tolerance = 0.5;
     ResetTest test = ResetTest::SlackResidual;
     ResetMode mode = ResetMode::ColdDuals;
   } reset;
 
   struct Recovery {
-    bool fallback = true; //!< after a solve that did not converge, start cold
-    bool retry = true;    //!< a broken-down warm solve is retried cold
-    //! not converged and violation > factor * max(start violation, eps):
-    //! broken down. 0: only failures count.
+    //! after a solve that did not converge (iteration cap or linear-solver
+    //! failure), the next solve starts cold
+    bool fallback = true;
+    //! a broken-down warm solve: its starting point is put back and solved
+    //! again with cold nu, lambda, s and kappa (worst case twice the
+    //! iterations). false: it is put back and optimize() returns 0.
+    bool retry = true;
+    //! a solve (any source but Cold) that does not converge and ends with a
+    //! violation above factor * max(violation at its start,
+    //! epsilon_constraint) counts as broken down, like a linear-solver
+    //! failure. 0: only failures count.
     double divergenceFactor = 10.0;
   } recovery;
 };
