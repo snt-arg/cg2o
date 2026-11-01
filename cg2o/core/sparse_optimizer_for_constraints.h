@@ -68,10 +68,14 @@ public:
   SparseOptimizerForConstraints(SparseOptimizerForConstraints &&) = delete;
   SparseOptimizerForConstraints &
   operator=(SparseOptimizerForConstraints &&) = delete;
-  //! removing an equality edge also removes the multiplier vertex that
-  //! addEdgeEq() created for it, so its id can be used again. Without
-  //! implicit ownership (G2O_NO_IMPLICIT_OWNERSHIP_OF_OBJECTS) the multiplier
-  //! is deleted and the multiplier slot of the edge is reset to nullptr.
+  // addEdgeEq() creates the multiplier vertex of an equality edge, and the
+  // optimizer owns it. It leaves the graph with its edge (removeEdge()), by
+  // removeVertex() on it, by clear() or with the optimizer, and its id can
+  // be used again. Without implicit ownership
+  // (G2O_NO_IMPLICIT_OWNERSHIP_OF_OBJECTS) it is then deleted; removeEdge(),
+  // removeVertex() and clear() reset the multiplier slot of the edge, which
+  // stays with the caller, so reading the multiplier throws. The destructor
+  // does not touch the edges (they may be destroyed already).
   bool removeEdge(g2o::HyperGraph::Edge *edge) override;
   bool removeVertex(g2o::HyperGraph::Vertex *vertex,
                     bool detach = false) override;

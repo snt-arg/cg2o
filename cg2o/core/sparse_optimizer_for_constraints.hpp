@@ -38,6 +38,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
@@ -69,10 +70,15 @@ SparseOptimizerForConstraints<Derived>::SparseOptimizerForConstraints() {
   defineAlphaBacktracking(_alpha);
 };
 
-// Default destructor
 template <typename Derived>
-SparseOptimizerForConstraints<Derived>::~SparseOptimizerForConstraints() =
-    default;
+SparseOptimizerForConstraints<Derived>::~SparseOptimizerForConstraints() {
+#if !G2O_DELETE_IMPLICITLY_OWNED_OBJECTS
+  // the multiplier vertices created by addEdgeEq(); the equality edges are
+  // not touched, the caller may have destroyed them already
+  for (auto *multiplier : _vEqLagrangeMultipliers)
+    delete multiplier;
+#endif
+}
 
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::invalidateActiveStructure() {
@@ -98,14 +104,9 @@ bool SparseOptimizerForConstraints<Derived>::removeEdge(
   if (!edges().count(edge))
     return false;
   auto *e = static_cast<OptimizableGraph::Edge *>(edge);
-  OptimizableGraph::Vertex *multiplier = nullptr; // created by addEdgeEq()
-  std::size_t multiplierSlot = 0;
-  if (_edgeEqSet.count(e) && !e->vertices().empty()) {
-    multiplierSlot = e->vertices().size() - 1;
-    multiplier =
-        static_cast<OptimizableGraph::Vertex *>(e->vertices()[multiplierSlot]);
-    std::erase(_vEqLagrangeMultipliers, multiplier);
-  }
+  HyperGraph::Vertex *multiplier = nullptr; // created by addEdgeEq()
+  if (_edgeEqSet.count(e) && !e->vertices().empty())
+    multiplier = e->vertices().back();
   _edgeEqSet.erase(e);
   _edgeIneqSet.erase(e);
   multiplierFunctionEqMap.erase(e);
@@ -115,18 +116,17 @@ bool SparseOptimizerForConstraints<Derived>::removeEdge(
   removeFromActiveStructure(e);
   if (!g2o::SparseOptimizer::removeEdge(edge))
     return false;
-  // the multiplier goes with its edge, unless another edge still uses it or
-  // it is the vertex being removed (g2o removes its edges first)
+  // the multiplier goes with its edge (removeVertex() deletes it), unless
+  // another edge still uses it or it is the vertex being removed (g2o removes
+  // its edges first; that removal deletes it)
   if (multiplier && multiplier->edges().empty() &&
       std::find(_removing_vertices.begin(), _removing_vertices.end(),
-                multiplier) == _removing_vertices.end() &&
-      static_cast<Derived *>(this)->removeVertex(multiplier)) {
+                multiplier) == _removing_vertices.end()) {
 #if !G2O_DELETE_IMPLICITLY_OWNED_OBJECTS
-    // the edge stays with the caller (with implicit ownership g2o deleted
-    // it and the multiplier)
-    e->setVertex(multiplierSlot, nullptr);
-    delete multiplier;
+    // the edge stays with the caller (with implicit ownership g2o deleted it)
+    e->setVertex(e->vertices().size() - 1, nullptr);
 #endif
+    static_cast<Derived *>(this)->removeVertex(multiplier);
   }
   return true;
 }
@@ -179,24 +179,55 @@ bool SparseOptimizerForConstraints<Derived>::removeVertex(HyperGraph::Vertex *v,
                                                           bool detach) {
   if (!v || vertex(v->id()) != v)
     return false;
-  std::erase(_vEqLagrangeMultipliers,
-             static_cast<OptimizableGraph::Vertex *>(v));
+  // a multiplier created by addEdgeEq() is deleted once it left the graph;
+  // g2o removes its equality edge first
+  const bool multiplier =
+      std::erase(_vEqLagrangeMultipliers,
+                 static_cast<OptimizableGraph::Vertex *>(v)) > 0;
+  const std::vector<HyperGraph::Edge *> edges(v->edges().begin(),
+                                              v->edges().end());
   invalidateActiveStructure();
   _removing_vertices.push_back(v);
   const bool removed = g2o::SparseOptimizer::removeVertex(v, detach);
   _removing_vertices.pop_back();
+#if !G2O_DELETE_IMPLICITLY_OWNED_OBJECTS
+  if (removed && multiplier) {
+    // its equality edge stays with the caller
+    for (auto *e : edges)
+      if (!e->vertices().empty() && e->vertices().back() == v)
+        e->setVertex(e->vertices().size() - 1, nullptr);
+    delete v;
+  }
+#else
+  (void)multiplier; // g2o deleted it and its edges
+#endif
   return removed;
 }
 
 template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::clear() {
-  _edgeEqSet.clear();
-  _edgeIneqSet.clear();
+  // the multiplier vertices created by addEdgeEq() leave with the graph
+  std::vector<HyperGraph::Vertex *> multipliers(_vEqLagrangeMultipliers.begin(),
+                                                _vEqLagrangeMultipliers.end());
+  std::set<OptimizableGraph::Edge *> equalityEdges;
+  equalityEdges.swap(_edgeEqSet);
   _vEqLagrangeMultipliers.clear();
+  _edgeIneqSet.clear();
   multiplierFunctionEqMap.clear();
   multiplierFunctionIneqMap.clear();
   invalidateActiveStructure();
   g2o::SparseOptimizer::clear();
+#if !G2O_DELETE_IMPLICITLY_OWNED_OBJECTS
+  // the equality edges stay with the caller
+  std::sort(multipliers.begin(), multipliers.end());
+  for (auto *e : equalityEdges)
+    if (!e->vertices().empty() &&
+        std::binary_search(multipliers.begin(), multipliers.end(),
+                           e->vertices().back()))
+      e->setVertex(e->vertices().size() - 1, nullptr);
+  for (auto *multiplier : multipliers)
+    delete multiplier;
+#endif
 }
 
 template <typename Derived>
