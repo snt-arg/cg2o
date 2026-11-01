@@ -30,7 +30,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #ifndef CG2O_GRAPH_OPTIMIZER_AL_H
 #define CG2O_GRAPH_OPTIMIZER_AL_H
 
-#include "al_start_point_policy.h"
+#include "cg2o/start_point/al/al_start_point.h"
 #include "sparse_optimizer_for_constraints.h"
 #include "vertex_lagrange_multiplier.h"
 
@@ -145,16 +145,17 @@ public:
   @returns the the scaling factor for a successful step size
   */
 
-  void executeIneqMultiplierUpdate(void *edgePtr);
-  void executeEqMultiplierUpdate(void *edgePtr);
+  void executeIneqMultiplierFunction(void *edgePtr,
+                                     MultiplierOperation operation);
+  void executeEqMultiplierFunction(void *edgePtr,
+                                   MultiplierOperation operation);
 
   // virtual void defineAlphaBacktracking() {      }
   template <int D, typename E, typename... VertexTypes, typename EdgeType>
   void updateMultipliers(EdgeType &edge);
-  ;
-
-  template <int D, typename E, typename... VertexTypes>
-  void updateMultipliersInEq(OptimizableGraph::Edge *edge);
+  //! initial multipliers and penalties of one edge
+  template <int D, typename E, typename... VertexTypes, typename EdgeType>
+  void resetMultipliers(EdgeType &edge);
 
   // solver parameter
 
@@ -178,22 +179,23 @@ public:
   // Setter function
   void resetLagrangeMultiplierEq() override;
 
-  //! multipliers and penalties a solve begins with
-  ALStartPointPolicy &startPointPolicy() { return _start_policy; }
-  const ALStartPointPolicy &startPointPolicy() const { return _start_policy; }
+  //! multipliers and penalties a solve begins with, see
+  //! cg2o/start_point/al/al_start_point.h
+  ALStartPoint &startPoint() { return _start_point; }
+  const ALStartPoint &startPoint() const { return _start_point; }
 
 protected:
-  friend class ALStartPointPolicy;
+  friend class ALStartPoint;
   friend class SparseOptimizerForConstraints<SparseOptimizerAL>;
   // setWarmStartLagrangeMultiplierFlag(): previous multipliers and penalties
   void setMultiplierReuse(bool reuse) {
-    _start_policy.options().source =
-        reuse ? ALStartSource::PreviousMultipliers : ALStartSource::Cold;
+    _start_point.select(reuse ? ALStartMethod::ReuseMultipliers
+                              : ALStartMethod::Cold);
   }
   bool multiplierReuse() const {
-    return _start_policy.options().source == ALStartSource::PreviousMultipliers;
+    return _start_point.method() == ALStartMethod::ReuseMultipliers;
   }
-  ALStartPointPolicy _start_policy;
+  ALStartPoint _start_point;
   double _rho_min = .00001;      // Minimum value for the penalty parameter
   double _rho_initial = 10;      // Initial value for the penalty parameter
   double _rho_max = 500;         // Maximum value for the penalty parameter
@@ -201,7 +203,6 @@ protected:
 
   bool _useSlackVariables = true; // Using slack variables for the inequality
                                   // constraints. it does not appear directly
-  bool _reset_lagrange_multipliers = false;
   // _rho_bar is saved in the variable called slack variable
 };
 
@@ -236,8 +237,11 @@ bool SparseOptimizerAL::addEdgeIneqImpl(
   e->setConstructQuadraticFormImpl(lambda);
 
   // Store the function in a map instead
-  updateMultipliersIneqFunctionMap[e] = [this, e]() {
-    this->updateMultipliers<D, E, VertexTypes...>(*e);
+  multiplierFunctionIneqMap[e] = [this, e](MultiplierOperation operation) {
+    if (operation == MultiplierOperation::Reset)
+      this->resetMultipliers<D, E, VertexTypes...>(*e);
+    else
+      this->updateMultipliers<D, E, VertexTypes...>(*e);
   };
 
   _edgeIneqSet.insert(e);
@@ -273,8 +277,11 @@ bool SparseOptimizerAL::addEdgeEqImpl(
   e->setConstructQuadraticFormImpl(lambda);
 
   // Store the function in a map instead
-  updateMultipliersEqFunctionMap[e] = [this, e]() {
-    this->updateMultipliers<D, E, VertexTypes...>(*e);
+  multiplierFunctionEqMap[e] = [this, e](MultiplierOperation operation) {
+    if (operation == MultiplierOperation::Reset)
+      this->resetMultipliers<D, E, VertexTypes...>(*e);
+    else
+      this->updateMultipliers<D, E, VertexTypes...>(*e);
   };
 
   // add teh edge to the set of inequality set
@@ -282,6 +289,54 @@ bool SparseOptimizerAL::addEdgeEqImpl(
   _vEqLagrangeMultipliers.push_back(vLagrangian);
 
   return true;
+}
+
+template <int D, typename E, typename... VertexTypes, typename EdgeType>
+void SparseOptimizerAL::resetMultipliers(EdgeType &edge) {
+  // Ensure EdgeType is either BaseFixedSizedEdgeEq or BaseFixedSizedEdgeIneq
+  static_assert(
+      std::is_base_of<BaseFixedSizedEdgeEq<D, E, VertexTypes...>,
+                      EdgeType>::value ||
+          std::is_base_of<BaseFixedSizedEdgeIneq<D, E, VertexTypes...>,
+                          EdgeType>::value,
+      "resetMultipliers can only accept BaseFixedSizedEdgeEq or "
+      "BaseFixedSizedEdgeIneq");
+
+  constexpr bool is_eq =
+      std::is_base_of<BaseFixedSizedEdgeEq<D, E, VertexTypes...>,
+                      EdgeType>::value;
+  constexpr bool is_ineq =
+      std::is_base_of<BaseFixedSizedEdgeIneq<D, E, VertexTypes...>,
+                      EdgeType>::value;
+  edge.computeError(); // the stored violation is the one of the current
+                       // primal point
+  if constexpr (is_ineq) {
+    auto multiplier = edge.lagrangeMultiplier();
+    multiplier.setConstant(_lagrange_multiplier_initial_eq);
+    edge.setLagrangeMultiplier(multiplier);
+
+    Eigen::Matrix<double, D, 1> rho_bar =
+        Eigen::Matrix<double, D, 1>::Constant(_rho_initial);
+    edge.setSlackVariable(rho_bar);
+    edge.setRho(rho_bar);
+    // save the constraint variation in the information matrix
+    edge.setConstraintViolationPrev(edge.error().array().min(0.0));
+  } else if constexpr (is_eq) {
+    auto multiplier = edge.lagrangeMultiplier();
+    multiplier.setConstant(_lagrange_multiplier_initial_eq);
+    edge.setLagrangeMultiplier(multiplier);
+
+    Eigen::Matrix<double, D, 1> rho_bar =
+        Eigen::Matrix<double, D, 1>::Constant(_rho_initial);
+
+    edge.setRho(rho_bar);
+    // In equality constraints, the information matrix 2D is used to store the
+    // constraint violation and the rho_bar we initialize the the constraint
+    // violation to error and rho_bar to as initial value Assign first D
+    // diagonal entries from `error.segment(0, D)
+    edge.setConstraintViolationPrev(edge.error().segment(0, D).cwiseAbs());
+    edge.setConstraintViolationPrev(std::move(rho_bar), D);
+  }
 }
 
 template <int D, typename E, typename... VertexTypes, typename EdgeType>
@@ -303,42 +358,6 @@ void SparseOptimizerAL::updateMultipliers(EdgeType &edge) {
                       EdgeType>::value;
   edge.computeError(); // multipliers must use the current, accepted primal
                        // point
-  if (_reset_lagrange_multipliers) {
-    if constexpr (is_ineq) {
-      auto multiplier = edge.lagrangeMultiplier();
-      multiplier.setConstant(_lagrange_multiplier_initial_eq);
-      edge.setLagrangeMultiplier(multiplier);
-
-      Eigen::Matrix<double, D, 1> rho_bar =
-          Eigen::Matrix<double, D, 1>::Constant(_rho_initial);
-      edge.setSlackVariable(rho_bar);
-      edge.setRho(rho_bar);
-      // save the constraint variation in the information matrix
-
-      edge.setConstraintViolationPrev(edge.error().array().min(0.0));
-      // add teh edge to the set of inequality set
-
-      return;
-    }
-
-    if constexpr (is_eq) {
-      auto multiplier = edge.lagrangeMultiplier();
-      multiplier.setConstant(_lagrange_multiplier_initial_eq);
-      edge.setLagrangeMultiplier(multiplier);
-
-      Eigen::Matrix<double, D, 1> rho_bar =
-          Eigen::Matrix<double, D, 1>::Constant(_rho_initial);
-
-      edge.setRho(rho_bar);
-      // In equality constraints, the information matrix 2D is used to store the
-      // constraint violation and the rho_bar we initialize the the constraint
-      // violation to error and rho_bar to as initial value Assign first D
-      // diagonal entries from `error.segment(0, D)
-      edge.setConstraintViolationPrev(edge.error().segment(0, D).cwiseAbs());
-      edge.setConstraintViolationPrev(std::move(rho_bar), D);
-      return;
-    }
-  }
 
   auto error = edge.error();
   auto rho = edge.rho();

@@ -108,8 +108,8 @@ bool SparseOptimizerForConstraints<Derived>::removeEdge(
   }
   _edgeEqSet.erase(e);
   _edgeIneqSet.erase(e);
-  updateMultipliersEqFunctionMap.erase(e);
-  updateMultipliersIneqFunctionMap.erase(e);
+  multiplierFunctionEqMap.erase(e);
+  multiplierFunctionIneqMap.erase(e);
   // update the active structure in place: optimize() can follow directly,
   // without initializeOptimization()
   removeFromActiveStructure(e);
@@ -193,8 +193,8 @@ void SparseOptimizerForConstraints<Derived>::clear() {
   _edgeEqSet.clear();
   _edgeIneqSet.clear();
   _vEqLagrangeMultipliers.clear();
-  updateMultipliersEqFunctionMap.clear();
-  updateMultipliersIneqFunctionMap.clear();
+  multiplierFunctionEqMap.clear();
+  multiplierFunctionIneqMap.clear();
   invalidateActiveStructure();
   g2o::SparseOptimizer::clear();
 }

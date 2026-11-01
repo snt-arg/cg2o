@@ -43,7 +43,9 @@ namespace cg2o {
 using namespace std;
 
 // Default constructor
-SparseOptimizerAL::SparseOptimizerAL() { _num_inner_iterations_max = 10; }
+SparseOptimizerAL::SparseOptimizerAL() : _start_point(*this) {
+  _num_inner_iterations_max = 10;
+}
 
 // Default destructor
 SparseOptimizerAL::~SparseOptimizerAL() = default;
@@ -68,30 +70,29 @@ double SparseOptimizerAL::RhoUpdateFactor() const { return _rho_update_factor; }
 
 // Setter solver paramters
 void SparseOptimizerAL::resetLagrangeMultiplierEq() {
-  // update the multiplier for Equality constraints and reset also the panelty
+  // reset the multiplier for Equality constraints and also the panelty
   // paramters
-  const bool previous = _reset_lagrange_multipliers;
-  _reset_lagrange_multipliers = true;
   for (auto &edge : _activeEdgesEq) {
-    executeEqMultiplierUpdate(edge);
+    executeEqMultiplierFunction(edge, MultiplierOperation::Reset);
   }
-  _reset_lagrange_multipliers = previous;
 }
 
 // Call the stored function later
-void SparseOptimizerAL::executeIneqMultiplierUpdate(void *edgePtr) {
-  auto it = updateMultipliersIneqFunctionMap.find(edgePtr);
-  if (it != updateMultipliersIneqFunctionMap.end()) {
-    it->second(); // Calls updateMultipliers on the correct edge
+void SparseOptimizerAL::executeIneqMultiplierFunction(
+    void *edgePtr, MultiplierOperation operation) {
+  auto it = multiplierFunctionIneqMap.find(edgePtr);
+  if (it != multiplierFunctionIneqMap.end()) {
+    it->second(operation); // updates or resets the multipliers of the edge
   } else {
     std::cerr << "[Error] Edge not found in function map" << std::endl;
   }
 }
 
-void SparseOptimizerAL::executeEqMultiplierUpdate(void *edgePtr) {
-  auto it = updateMultipliersEqFunctionMap.find(edgePtr);
-  if (it != updateMultipliersEqFunctionMap.end()) {
-    it->second(); // Calls updateMultipliers on the correct edge
+void SparseOptimizerAL::executeEqMultiplierFunction(
+    void *edgePtr, MultiplierOperation operation) {
+  auto it = multiplierFunctionEqMap.find(edgePtr);
+  if (it != multiplierFunctionEqMap.end()) {
+    it->second(operation); // updates or resets the multipliers of the edge
   } else {
     std::cerr << "[Error] Edge not found in function map" << std::endl;
   }
@@ -126,7 +127,7 @@ int SparseOptimizerAL::optimize(int iterations, bool online) {
   bool outerLoopStop = false;
   bool ok = true;
 
-  _start_policy.prepare(*this);
+  _start_point.prepare(); // multipliers and penalties of this solve
 
   ok = _algorithm->init(online);
   if (!ok) {
@@ -192,7 +193,7 @@ int SparseOptimizerAL::optimize(int iterations, bool online) {
       if (innerLoopStop && ok) {
         // update the multiplier for Equality constraints
         for (auto &edge : _activeEdgesEq) {
-          executeEqMultiplierUpdate(edge);
+          executeEqMultiplierFunction(edge, MultiplierOperation::Update);
         }
       }
     }
@@ -212,7 +213,7 @@ int SparseOptimizerAL::optimize(int iterations, bool online) {
 
     // update the multiplier for inequality constraints
     for (auto &edge : _activeEdgesIneq) {
-      executeIneqMultiplierUpdate(edge);
+      executeIneqMultiplierFunction(edge, MultiplierOperation::Update);
     }
 
   } // End of outer loop

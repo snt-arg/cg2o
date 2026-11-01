@@ -1,9 +1,11 @@
-// Building blocks shared by the start-point policies of the constrained
-// optimizers: solve outcome, the copies of vertex estimates, stage shifts.
+// Building blocks shared by the start points of the constrained solvers: the
+// selected start method, the result of a run of the iterations, copies of
+// vertex estimates and the stage sequences of a receding-horizon shift.
 #ifndef CG2O_START_POINT_COMMON_H
 #define CG2O_START_POINT_COMMON_H
 
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -12,29 +14,14 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <typeindex>
+#include <typeinfo>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace cg2o {
-
-// The rows of one inequality edge, independent of its dimension D: slack s
-// and multiplier lambda live in the edge; g(x) is edge->errorData() after
-// edge->computeError().
-struct IneqBlock {
-  g2o::OptimizableGraph::Edge *edge = nullptr;
-  int dimension = 0;
-  double *slack = nullptr;
-  double *multiplier = nullptr;
-};
-
-//! what a start-point policy reports to optimize() before the iterations
-struct StartResult {
-  bool warm = false;         //!< started from cached or supplied values
-  bool keepRollback = false; //!< the starting point was stored for rollback
-  //! max(|h|, g+) at the start, measured for the divergence test
-  double startViolation = std::numeric_limits<double>::quiet_NaN();
-};
 
 //! the result of one run of the iterations
 struct SolveOutcome {
@@ -42,12 +29,51 @@ struct SolveOutcome {
   bool solverFailed = false; //!< the linear solver failed in an iteration
 };
 
-//! what optimize() does after one run of the iterations
-enum class FinishAction {
-  Accept,    //!< the iterate is the result
-  RetryCold, //!< the starting point was put back: solve again, cold
-  Reject,    //!< the solve broke down; the cache is cleared
-  Error      //!< the algorithm failed to initialize (optimize() returns -1)
+// The start method of a solver, one of the strategies of its family (Base is
+// the family's strategy interface). A strategy S has a Settings type and a
+// settings member. A method is selected between solves; the iterations only
+// call the active one.
+template <typename Base> class StrategySlot {
+public:
+  explicit StrategySlot(std::unique_ptr<Base> initial)
+      : _active(std::move(initial)) {}
+
+  Base &active() { return *_active; }
+  const Base &active() const { return *_active; }
+  std::type_index type() const {
+    const Base &active = *_active;
+    return typeid(active);
+  }
+  template <typename S> bool holds() const { return type() == typeid(S); }
+
+  //! makes S the active method; an active S keeps its settings
+  template <typename S>
+    requires std::derived_from<S, Base>
+  typename S::Settings &use() {
+    if (!holds<S>())
+      _active = std::make_unique<S>();
+    return static_cast<S &>(*_active).settings;
+  }
+  //! settings of the active method S; std::logic_error if S is not active
+  template <typename S>
+    requires std::derived_from<S, Base>
+  typename S::Settings &settings() {
+    if (!holds<S>())
+      throw std::logic_error(
+          "settings requested for a start method that is not selected");
+    return static_cast<S &>(*_active).settings;
+  }
+  template <typename S>
+    requires std::derived_from<S, Base>
+  const typename S::Settings &settings() const {
+    if (!holds<S>())
+      throw std::logic_error(
+          "settings requested for a start method that is not selected");
+    return static_cast<const S &>(*_active).settings;
+  }
+
+private:
+  std::unique_ptr<Base> _active;
 };
 
 //! stage k takes stage min(k + n, last): the last n stages keep the last one
@@ -105,9 +131,10 @@ public:
       if (it == _slots.end())
         it = _slots.emplace(v, std::make_unique<DataSlot>(v)).first;
       if (!it->second->save(which))
-        throw std::invalid_argument("warm start needs typed addVertex() or "
-                                    "registerWarmStartVertex<T>() for vertex " +
-                                    std::to_string(v->id()));
+        throw std::invalid_argument(
+            "the start point needs typed addVertex() or "
+            "startPoint().registerVertex<T>() for vertex " +
+            std::to_string(v->id()));
       entries.push_back({v, v->id(), multiplier, it->second.get()});
     }
   }
@@ -121,8 +148,7 @@ public:
         continue;
       if (!v->fixed() && (entry.multiplier || primal)) {
         if (!entry.slot->restore(which))
-          throw std::runtime_error(
-              "failed to restore warm-start vertex estimate");
+          throw std::runtime_error("failed to restore a vertex estimate");
       }
     }
     discard(which);
@@ -204,14 +230,13 @@ public:
     for (auto *p : stages) {
       if (p == nullptr)
         throw std::invalid_argument(
-            "[Error] addWarmStartShiftSequence: null entry in the sequence");
+            "addShiftSequence: null entry in the sequence");
       if (_members.count(p))
-        throw std::invalid_argument("warm-start shift sequences overlap");
+        throw std::invalid_argument("shift sequences overlap");
     }
     std::unordered_set<T *> unique(stages.begin(), stages.end());
     if (unique.size() != stages.size())
-      throw std::invalid_argument(
-          "duplicate entry in warm-start shift sequence");
+      throw std::invalid_argument("duplicate entry in a shift sequence");
   }
   template <typename T> void add(const std::vector<T *> &stages) {
     _members.insert(stages.begin(), stages.end());

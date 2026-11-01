@@ -1,9 +1,9 @@
-// Templates of ISPDStartPointPolicy that need the complete solver type.
-#ifndef CG2O_ISPD_START_POINT_POLICY_HPP
-#define CG2O_ISPD_START_POINT_POLICY_HPP
+// Templates of ISPDStartPoint that need the complete solver type.
+#ifndef CG2O_ISPD_START_POINT_HPP
+#define CG2O_ISPD_START_POINT_HPP
 
-#include "ispd_start_point_policy.h"
-#include "sparse_optimizer_ispd.h"
+#include "cg2o/core/sparse_optimizer_ispd.h"
+#include "cg2o/start_point/ispd/ispd_start_point.h"
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -30,21 +30,26 @@ struct is_eq_edge<
     : std::true_type {};
 } // namespace internal
 
+template <typename T> void ISPDStartPoint::registerVertex(T *v) {
+  if (!v || _solver.vertex(v->id()) != v)
+    throw std::invalid_argument("start-point vertex is not in this graph");
+  _vertices.registerVertex(v);
+}
+
 template <typename T>
-void ISPDStartPointPolicy::addShiftSequence(SparseOptimizerISPD &solver,
-                                            const std::vector<T *> &stages) {
+void ISPDStartPoint::addShiftSequence(const std::vector<T *> &stages) {
   _shift_members.check(stages); // also rejects a null entry in a short one
   if (stages.size() < 2) {
     return; // nothing to shift
   }
   for (auto *p : stages) {
     if constexpr (std::is_base_of_v<g2o::OptimizableGraph::Vertex, T>) {
-      if (solver.vertex(p->id()) != p ||
+      if (_solver.vertex(p->id()) != p ||
           p->dimension() != stages.front()->dimension())
         throw std::invalid_argument("shift vertices must belong to this graph "
                                     "and have equal dimensions");
     } else {
-      if (!solver.edges().count(p))
+      if (!_solver.edges().count(p))
         throw std::invalid_argument("shift edge is not in this graph");
     }
   }
@@ -54,7 +59,7 @@ void ISPDStartPointPolicy::addShiftSequence(SparseOptimizerISPD &solver,
   // of the last stage (which keeps its own)
   if constexpr (std::is_base_of_v<g2o::OptimizableGraph::Vertex, T>) {
     for (auto *v : stages)
-      solver.registerWarmStartVertex(v);
+      registerVertex(v);
     // primal vertices: x_k <- x_{k+n}, fixed vertices are left untouched
     _shift_functions.push_back([stages](bool primal, int n) {
       if (!primal) {
@@ -89,11 +94,11 @@ void ISPDStartPointPolicy::addShiftSequence(SparseOptimizerISPD &solver,
     });
   } else {
     static_assert(internal::always_false<T>::value,
-                  "addWarmStartShiftSequence: T must be a g2o vertex, a "
+                  "addShiftSequence: T must be a g2o vertex, a "
                   "BaseFixedSizedEdgeIneq or a BaseFixedSizedEdgeEq");
   }
 }
 
 } // namespace cg2o
 
-#endif // CG2O_ISPD_START_POINT_POLICY_HPP
+#endif // CG2O_ISPD_START_POINT_HPP

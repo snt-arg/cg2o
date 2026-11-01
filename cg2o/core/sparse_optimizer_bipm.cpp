@@ -45,7 +45,9 @@ namespace cg2o {
 using namespace std;
 
 // Default constructor
-SparseOptimizerBIPM::SparseOptimizerBIPM() { _num_inner_iterations_max = 100; }
+SparseOptimizerBIPM::SparseOptimizerBIPM() : _start_point(*this) {
+  _num_inner_iterations_max = 100;
+}
 
 // Default destructor
 SparseOptimizerBIPM::~SparseOptimizerBIPM() = default;
@@ -178,10 +180,7 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
   bool innerLoopStop = false;
   bool outerLoopStop = false;
   bool ok = true;
-  _kappa = _kappa_initial; // reset _kappa to the initial value
-  if (!_keep_equality_multipliers) {
-    resetLagrangeMultiplierEq();
-  }
+  _start_point.prepare(); // kappa and equality multipliers of this solve
 
   ok = _algorithm->init(online);
   if (!ok) {
@@ -194,11 +193,6 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
     _batchStatistics.resize(iterations);
 
   OptimizationAlgorithm::SolverResult result = OptimizationAlgorithm::OK;
-
-  if (_activeEdgesIneq.empty()) {
-    // set mu to 0 if there are no inequality edges
-    this->setKappa(_kappa_final);
-  }
 
   while (!outerLoopStop) {
 

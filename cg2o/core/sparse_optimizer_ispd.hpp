@@ -30,11 +30,11 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #ifndef G2O_GRAPH_OPTIMIZER_PDIS_HPP
 #define G2O_GRAPH_OPTIMIZER_PDIS_HPP
 
+#include "ispd_numerics.h"
 #include "sparse_optimizer_for_constraints.h"
 #include "sparse_optimizer_ispd.h"
 #include "vertex_lagrange_multiplier.h"
 #include "vertex_state_guard.h"
-#include "warm_start_math.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -80,14 +80,6 @@ bool SparseOptimizerISPD::addEdgeIneqImpl(
     std::cerr << "[Error] adding Ineq edge to the optimizer" << std::endl;
     return false;
   }
-  this->initializeSlackVariable<D, E, VertexTypes...>(e);
-
-  Eigen::Matrix<double, D, 1> lagrange_multiplier =
-      Eigen::Matrix<double, D, 1>::Constant(_lagrange_multiplier_initial_ineq);
-
-  // set the lagrange multiplier and slack variable
-  e->setLagrangeMultiplier(lagrange_multiplier);
-
   // set the ConstructQuadraticFormImpl function
   auto lambda = [this](BaseFixedSizedEdgeIneq<D, E, VertexTypes...> &edge) {
     this->constructQuadraticFormIneq(edge);
@@ -102,8 +94,10 @@ bool SparseOptimizerISPD::addEdgeIneqImpl(
   getDualityGapFunctionMap[e] = [this, e]() {
     return this->getDualityGap<D, E, VertexTypes...>(e);
   };
-  _ineq_blocks[e] = IneqBlock{e, D, e->slackVariable().data(),
-                              e->lagrangeMultiplier().data()};
+  IneqBlock &block = _ineq_blocks[e] = IneqBlock{
+      e, D, e->slackVariable().data(), e->lagrangeMultiplier().data()};
+  // initial slack variable and lagrange multiplier
+  _start_point.initializeNewRows(block);
 
   // add teh edge to the set of inequality set
   _edgeIneqSet.insert(e);
@@ -127,7 +121,7 @@ double SparseOptimizerISPD::getDualityGap(EdgeType *edge) {
   const auto &s = edge->slackVariable();
   const auto &lambda = edge->lagrangeMultiplier();
   for (int i = 0; i < D; ++i) {
-    if (!warm_start::validPair(s(i), lambda(i), _kappa))
+    if (!ispd::validPair(s(i), lambda(i), _kappa))
       return std::numeric_limits<double>::infinity();
   }
   return s.dot(lambda);
@@ -143,12 +137,6 @@ void SparseOptimizerISPD::edgeProcessing(EdgeType *edge,
       "updateMultipliers in PDIS can only accept BaseFixedSizedEdgeIneq");
 
   switch (operation) {
-  case IneqStateOperation::ColdInitialize: { // reset the lagrange multiplier
-                                             // and slack variable
-    this->initializeAuxiliaryVariables<D, E, VertexTypes...>(edge);
-    return;
-  }
-
   case IneqStateOperation::PredictConstraint: { // compute the predicted error
     auto computeErrorPrediction =
         [this](EdgeType *edge, Eigen::Matrix<double, D, 1> &predicted_error,
@@ -346,85 +334,6 @@ void SparseOptimizerISPD::edgeProcessing(EdgeType *edge,
 }
 
 template <int D, typename E, typename... VertexTypes>
-void SparseOptimizerISPD::initializeSlackVariable(
-    BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *e) {
-  Eigen::Matrix<double, D, 1> slack_variable;
-
-  switch (_init_slack_strategy) {
-  case 0: {
-    // set the slack variable to max(-g(x0),_slack_variable_initial_ineq)
-    e->computeError();
-    for (int i = 0; i < D; ++i) {
-      double g_x0 = -(e->errorData()[i]);
-      if (g_x0 > _slack_variable_initial_ineq) {
-        slack_variable[i] = g_x0;
-      } else {
-        slack_variable[i] = _slack_variable_initial_ineq;
-      }
-    }
-    break;
-  }
-  case 1: {
-    // set the slack variable to
-    // max(abs(g(x0)),_slack_variable_initial_ineq)
-    e->computeError();
-    for (int i = 0; i < D; ++i) {
-      double g_x0 = std::abs(e->errorData()[i]);
-      if (g_x0 > _slack_variable_initial_ineq) {
-        slack_variable[i] = g_x0;
-      } else {
-        slack_variable[i] = _slack_variable_initial_ineq;
-      }
-    }
-    break;
-  }
-  case 2: {
-    // set the slack variable to constant _slack_variable_initial_ineq
-    slack_variable =
-        Eigen::Matrix<double, D, 1>::Constant(_slack_variable_initial_ineq);
-    break;
-  }
-  default:
-    throw std::runtime_error("[Error] Unknown slack initialization strategy. "
-                             "0: max(-g(x0),_slack_variable_initial_ineq)"
-                             "1: max(abs(g(x0)),_slack_variable_initial_ineq)"
-                             "2: constant  =  _slack_variable_initial_ineq");
-  }
-
-  e->setSlackVariable(slack_variable);
-};
-
-template <int D, typename E, typename... VertexTypes>
-void SparseOptimizerISPD::initializeAuxiliaryVariables(
-    BaseFixedSizedEdgeIneq<D, E, VertexTypes...> *edge) {
-  this->initializeSlackVariable<D, E, VertexTypes...>(edge);
-
-  auto &multiplier = edge->lagrangeMultiplier();
-  auto &slack = edge->slackVariable();
-
-  switch (_init_lagrange_strategy) {
-  case 0: {
-    multiplier.setConstant(_lagrange_multiplier_initial_ineq);
-    break;
-  }
-  case 1: {
-    multiplier = (1.0 / (_kappa * slack.array()))
-                     .cwiseMax(Eigen::Matrix<double, D, 1>::Constant(
-                                   _lagrange_multiplier_initial_ineq)
-                                   .array())
-                     .matrix();
-    break;
-  }
-  }
-}
-
-template <typename T> void SparseOptimizerISPD::registerWarmStartVertex(T *v) {
-  if (!v || vertex(v->id()) != v)
-    throw std::invalid_argument("warm-start vertex is not in this graph");
-  _start_policy.registerVertex(v);
-}
-
-template <int D, typename E, typename... VertexTypes>
 bool SparseOptimizerISPD::addEdgeEqImpl(
     BaseFixedSizedEdgeEq<D, E, VertexTypes...> *e) {
   auto *vLagrangian = this->attachEqualityEdge(e);
@@ -444,6 +353,6 @@ bool SparseOptimizerISPD::addEdgeEqImpl(
 
 } // namespace cg2o
 
-#include "ispd_start_point_policy.hpp"
+#include "cg2o/start_point/ispd/ispd_start_point.hpp"
 
 #endif // G2O_GRAPH_OPTIMIZER_PDIS_HPP

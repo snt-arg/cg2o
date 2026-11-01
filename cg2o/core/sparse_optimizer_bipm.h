@@ -30,6 +30,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #ifndef G2O_GRAPH_OPTIMIZER_BIPM_H
 #define G2O_GRAPH_OPTIMIZER_BIPM_H
 
+#include "cg2o/start_point/bipm/bipm_start_point.h"
 #include "g2o/core/g2o_core_api.h"
 #include "sparse_optimizer_for_constraints.h"
 #include "vertex_lagrange_multiplier.h"
@@ -180,12 +181,22 @@ public:
   bool _barrier_step_failed = false;
   bool strictlyInterior();
 
+  //! kappa and equality multipliers a solve begins with, see
+  //! cg2o/start_point/bipm/bipm_start_point.h
+  BIPMStartPoint &startPoint() { return _start_point; }
+  const BIPMStartPoint &startPoint() const { return _start_point; }
+
 protected:
+  friend class BIPMStartPoint;
   friend class SparseOptimizerForConstraints<SparseOptimizerBIPM>;
   // setWarmStartLagrangeMultiplierFlag(): keep the equality multipliers
-  void setMultiplierReuse(bool reuse) { _keep_equality_multipliers = reuse; }
-  bool multiplierReuse() const { return _keep_equality_multipliers; }
-  bool _keep_equality_multipliers = false;
+  void setMultiplierReuse(bool reuse) {
+    _start_point.options().keepEqualityMultipliers = reuse;
+  }
+  bool multiplierReuse() const {
+    return _start_point.options().keepEqualityMultipliers;
+  }
+  BIPMStartPoint _start_point;
 };
 
 template <int D, typename E, typename... VertexTypes>

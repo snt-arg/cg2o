@@ -47,6 +47,12 @@ class BaseFixedSizedEdgeIneq;
 template <int D, typename E, typename... VertexTypes>
 class BaseFixedSizedEdgeEq;
 
+//! what the per-edge multiplier function of the AL solver does
+enum class MultiplierOperation {
+  Update, //!< first-order multiplier and penalty update
+  Reset   //!< initial multipliers and penalties
+};
+
 // Specialized optimizer inheriting from SparseOptimizer
 template <typename Derived>
 class G2O_CORE_API SparseOptimizerForConstraints : public g2o::SparseOptimizer {
@@ -178,9 +184,9 @@ public:
   virtual bool verifyConvergence(double epsilon);
   virtual bool verifyEqFeasibility(EdgeContainer &edgeVec, double epsilon);
   virtual bool verifyIneqFeasibility(EdgeContainer &edgeVec, double epsilon);
-  //! keep the multipliers of the previous solve; forwarded to the start
-  //! point of the solver (ISPD: equality multipliers of a cold start, AL:
-  //! ALStartSource::PreviousMultipliers, BIPM: equality multipliers)
+  //! keep the multipliers of the previous solve; forwarded to startPoint()
+  //! of the solver (ISPD and BIPM: options().keepEqualityMultipliers, AL:
+  //! ALStartMethod::ReuseMultipliers)
   void setWarmStartLagrangeMultiplierFlag(bool flag);
   void setInnerIterationsMax(int maxInnerIterations);
   void setLagrangeMultiplierInitial(double lagrangeMultiplierInitial);
@@ -205,10 +211,10 @@ protected:
   };
   std::vector<g2o::OptimizableGraph::Vertex *>
       _vEqLagrangeMultipliers; // Set of Lagrangian vertices
-  std::unordered_map<void *, std::function<void()>>
-      updateMultipliersEqFunctionMap;
-  std::unordered_map<void *, std::function<void()>>
-      updateMultipliersIneqFunctionMap;
+  std::unordered_map<void *, std::function<void(MultiplierOperation)>>
+      multiplierFunctionEqMap;
+  std::unordered_map<void *, std::function<void(MultiplierOperation)>>
+      multiplierFunctionIneqMap;
   TerminationCriteria _terminationCriteria; // New termination criteria object
   EdgeContainer _activeEdgesIneq; ///< sorted according to EdgeIDCompare
   std::set<OptimizableGraph::Edge *> _edgeIneqSet; // Set of inequality edges

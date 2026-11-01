@@ -1,25 +1,14 @@
-// Numerical building blocks for ISPD warm starts.
-#ifndef CG2O_WARM_START_MATH_H
-#define CG2O_WARM_START_MATH_H
+// Row arithmetic of an ISPD warm start: centring, repair and the change
+// detector, on one (s_i, lambda_i) pair.
+#ifndef CG2O_ISPD_START_MATH_H
+#define CG2O_ISPD_START_MATH_H
 
+#include "cg2o/core/ispd_numerics.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
-namespace cg2o::warm_start {
-
-inline bool positiveFinite(double value) {
-  return value > 0.0 && std::isfinite(value);
-}
-
-// The quantities used by the eliminated primal-dual system must be finite.
-// Positivity of the product alone would incorrectly accept two negatives.
-inline bool validPair(double slack, double multiplier, double kappa) {
-  return positiveFinite(slack) && positiveFinite(multiplier) &&
-         positiveFinite(kappa) && positiveFinite(slack * multiplier) &&
-         positiveFinite(multiplier / slack) &&
-         positiveFinite((1.0 / kappa) / slack);
-}
+namespace cg2o::ispd {
 
 // Project s*lambda into the requested band about mu. Logs avoid overflow
 // in target/(s*lambda). Mode 0 preserves the ratio, 2 preserves slack,
@@ -108,5 +97,6 @@ inline bool resetChangedRow(double &slack, double &multiplier, double g,
   return true;
 }
 
-} // namespace cg2o::warm_start
-#endif
+} // namespace cg2o::ispd
+
+#endif // CG2O_ISPD_START_MATH_H

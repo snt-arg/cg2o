@@ -1,9 +1,7 @@
 set(source
   sparse_optimizer_bipm.cpp
   sparse_optimizer_ispd.cpp
-  ispd_start_point_policy.cpp
   sparse_optimizer_al.cpp
-  al_start_point_policy.cpp
 )
 
 set(header
@@ -16,16 +14,15 @@ set(header
   sparse_optimizer_for_constraints.hpp
   termination_criteria.h
   vertex_lagrange_multiplier.h
-  warm_start_math.h
+  ispd_numerics.h
   vertex_state_guard.h
-  start_point_common.h
-  ispd_start_point_policy.h
-  ispd_start_point_policy.hpp
-  al_start_point_policy.h
 )
 
-# Define the library
-add_library(core ${G2O_LIB_TYPE} ${source} ${header})
+# Define the library. The start points of the solvers (cg2o/start_point) are
+# compiled into it: each solver owns one and it reads the solver state.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../start_point/start_point.cmake)
+add_library(core ${G2O_LIB_TYPE} ${source} ${header}
+  ${start_point_source} ${start_point_header})
 
 # Include directories
 target_include_directories(core PUBLIC
@@ -62,3 +59,6 @@ install(TARGETS core
 file(GLOB headers "${CMAKE_CURRENT_SOURCE_DIR}/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
 
 install(FILES ${headers} DESTINATION ${INCLUDES_INSTALL_DIR}/core)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../start_point/
+  DESTINATION ${INCLUDES_INSTALL_DIR}/start_point
+  FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
