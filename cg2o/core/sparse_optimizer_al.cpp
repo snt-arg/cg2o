@@ -114,6 +114,7 @@ int SparseOptimizerAL::optimize(int iterations, bool online) {
       !(_rho_max >= _rho_initial) || !std::isfinite(_rho_max) ||
       !(_rho_update_factor >= 1) || !std::isfinite(_rho_update_factor))
     throw std::invalid_argument("invalid AL penalty settings");
+  requireGaussNewton();
 
   if (_ivMap.size() == 0) {
     G2O_WARN("0 vertices to optimize, maybe forgot to call "

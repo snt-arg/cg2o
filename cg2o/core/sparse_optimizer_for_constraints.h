@@ -225,6 +225,12 @@ protected:
   EdgeContainer _activeEdgesEq; ///< sorted according to EdgeIDCompare
   EdgeContainer _fixedEdgesEq, _fixedEdgesIneq;
   bool fixedConstraintsFeasible();
+  // The constrained solvers set their own step (barrier, multiplier and
+  // backtracking rules) and need the Gauss-Newton algorithm: Levenberg and
+  // Dogleg accept a step by the objective alone (constraint edges have no
+  // chi2) and damp the multiplier rows of the KKT system too, which gave wrong
+  // solutions without an error. std::invalid_argument for these two.
+  void requireGaussNewton() const;
   std::set<OptimizableGraph::Edge *> _edgeEqSet; // Set of equality edges
 
   // solver parameter

@@ -53,6 +53,7 @@ void SparseOptimizerISPD::clear() {
 }
 
 void SparseOptimizerISPD::validateSettings() const {
+  requireGaussNewton();
   auto positive = [](double x) { return ispd::positiveFinite(x); };
   if (!positive(_kappa_initial) || !positive(_kappa_final) ||
       !positive(1.0 / _kappa_initial) || !positive(1.0 / _kappa_final) ||

@@ -162,6 +162,7 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
       !(_kappa_final >= _kappa_initial) || !std::isfinite(_kappa_final) ||
       !(_kappa_update_factor > 1) || !std::isfinite(_kappa_update_factor))
     throw std::invalid_argument("invalid BIPM barrier settings");
+  requireGaussNewton();
   if (!strictlyInterior()) {
     G2O_WARN("BIPM needs a strictly feasible starting point (all inequality "
              "constraints < 0)");

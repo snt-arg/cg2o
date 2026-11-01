@@ -34,9 +34,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
 #include <g2o/core/block_solver.h>
-#include <g2o/core/optimization_algorithm_dogleg.h>
 #include <g2o/core/optimization_algorithm_gauss_newton.h>
-#include <g2o/core/optimization_algorithm_levenberg.h>
 
 #include <Eigen/Core>
 #include <iostream>
@@ -62,10 +60,9 @@ int main(int argc, char **argv) {
   std::cout << "OP: min 0.5 * ||x1-1||^2 + 0.5 * ||x2-1||^2 s.t.    "
                "x1^2 + x2^2 - 1 = 0  ,  4*x1^2 + 0.25*x2^2 - 1 <= 0 "
             << std::endl;
-  std::cout
-      << "Usage: " << argv[0]
-      << "solverType:<0=GN,1=LV,2=DL> iterations<int> a<int> b<int> c<int>"
-      << std::endl;
+  std::cout << "Usage: " << argv[0]
+            << "solverType:<0=GN> iterations<int> a<int> b<int> c<int>"
+            << std::endl;
   std::cout << "x_start<int> y_start<int> z_start<int> " << std::endl;
   std::cout << "./example -0.2  0 0 150" << std::endl;
 
@@ -166,23 +163,13 @@ int main(int argc, char **argv) {
 
   blockSolver = std::make_unique<g2o::BlockSolverX>(std::move(linearSolver));
 
-  switch (solverType) {
-  case 0:
-    algorithm = std::make_unique<g2o::OptimizationAlgorithmGaussNewton>(
-        std::move(blockSolver));
-    break;
-  case 1:
-    algorithm = std::make_unique<g2o::OptimizationAlgorithmLevenberg>(
-        std::move(blockSolver));
-    break;
-  case 2:
-    algorithm = std::make_unique<g2o::OptimizationAlgorithmDogleg>(
-        std::move(blockSolver));
-    break;
-  default:
-    throw std::runtime_error("Invalid solver type");
-    return -1;
-  }
+  // the constrained optimizers set their own step and reject Levenberg and
+  // Dogleg, which accept a step by the objective alone
+  if (solverType != 0)
+    throw std::runtime_error("solver type: 0 (Gauss-Newton) is the only one "
+                             "the constrained optimizers accept");
+  algorithm = std::make_unique<g2o::OptimizationAlgorithmGaussNewton>(
+      std::move(blockSolver));
 
   optimizer.setAlgorithm(algorithm.get());
 

@@ -28,6 +28,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
 #include "g2o/core/optimization_algorithm.h"
+#include "g2o/core/optimization_algorithm_dogleg.h"
+#include "g2o/core/optimization_algorithm_levenberg.h"
 #include "g2o/core/optimization_algorithm_with_hessian.h"
 #include "g2o/core/solver.h"
 #include "g2o/stuff/logger.h"
@@ -90,6 +92,16 @@ void SparseOptimizerForConstraints<Derived>::invalidateActiveStructure() {
   _activeEdgesIneq.clear();
   _fixedEdgesEq.clear();
   _fixedEdgesIneq.clear();
+}
+
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::requireGaussNewton() const {
+  if (dynamic_cast<const g2o::OptimizationAlgorithmLevenberg *>(_algorithm) ||
+      dynamic_cast<const g2o::OptimizationAlgorithmDogleg *>(_algorithm))
+    throw std::invalid_argument(
+        "constrained optimizers need the Gauss-Newton algorithm: Levenberg and "
+        "Dogleg accept a step by the objective alone and damp the multiplier "
+        "rows");
 }
 
 template <typename Derived>
