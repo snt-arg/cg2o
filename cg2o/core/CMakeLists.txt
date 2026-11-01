@@ -15,6 +15,7 @@ set(header
   termination_criteria.h
   vertex_lagrange_multiplier.h
   ispd_numerics.h
+  kkt_structure.h
   vertex_state_guard.h
 )
 

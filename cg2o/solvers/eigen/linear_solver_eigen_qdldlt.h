@@ -15,6 +15,7 @@ rest of the library (see the header of linear_solver_eigen_ldlt.h).
 #include <stdexcept>
 #include <vector>
 
+#include "cg2o/core/kkt_structure.h"
 #include "g2o/core/batch_stats.h"
 #include "g2o/core/linear_solver.h"
 #include "g2o/core/marginal_covariance_cholesky.h"
@@ -27,11 +28,26 @@ namespace cg2o {
  * Sparse LDL^T with optional diagonal regularization, iterative refinement,
  * and a residual-verified SparseLU fallback. Header-only; Eigen and g2o only.
  *
- * The incoming matrix K is stored as its upper triangle. Exactly-zero stored
- * diagonal entries receive -delta, forming K_reg = K + R. This assumes that
- * such entries belong to dual variables; it does not make an arbitrary
- * indefinite matrix quasi-definite. In a KKT system, quasi-definiteness also
- * requires a positive-definite primal block and negative-definite dual block.
+ * The incoming matrix K is stored as its upper triangle and regularized to
+ * K_reg = K + R, R diagonal:
+ *  - dual rows: an exactly-zero diagonal entry receives -delta
+ *    (setDualRegularization, default 1e-9);
+ *  - primal rows: every diagonal entry receives +sigma
+ *    (setPrimalRegularization, default 0 = off), as OSQP adds sigma I to P.
+ * With both, a KKT matrix [H J^T; J 0] with H positive semidefinite and J of
+ * full row rank becomes quasi-definite: LDL^T exists for any symmetric
+ * ordering and needs no pivoting. The constrained optimizers pass the dual
+ * blocks (equality multipliers) before every optimize(), see
+ * KKTStructureAware. Without them, a row is dual if its diagonal entry is
+ * <= 0 and primal if it is > 0, which misses primal variables with a zero
+ * diagonal (no cost, no inequality).
+ *
+ * Primal regularization matters when the primal block is singular in a
+ * direction no constraint fixes (variables without cost, e.g. a terminal-only
+ * cost): then K itself is singular, and in tests LDL^T with delta alone (or
+ * LU) stalled or failed while sigma ~1e-6 solved in a few iterations. On
+ * well-posed problems it only adds refinement steps, and a large sigma
+ * (>= 1e-4) leaves the refinement short of the tolerance (LU fallbacks).
  * Any regularization already applied by the caller remains part of K.
  *
  * Accuracy is measured against K, removing only this solver's own R:
@@ -63,7 +79,8 @@ namespace cg2o {
  * covariances continue to use LDL^T and do not use the LU fallback.
  */
 template <typename MatrixType>
-class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType> {
+class LinearSolverEigenQDLDLT : public g2o::LinearSolverCCS<MatrixType>,
+                                public KKTStructureAware {
 public:
   using SparseMatrix = Eigen::SparseMatrix<double, Eigen::ColMajor, int>;
   using DecompositionBase = Eigen::SimplicialLDLT<SparseMatrix, Eigen::Upper,
@@ -153,6 +170,28 @@ public:
     _delta = delta;
   }
   double dualRegularization() const { return _delta; }
+  //! +sigma on the diagonal of every primal row (0: off). The refinement
+  //! against K removes the bias; it is enabled whenever sigma > 0.
+  void setPrimalRegularization(double sigma) {
+    requireNonnegativeFinite(sigma, "primal regularization");
+    _sigma = sigma;
+  }
+  double primalRegularization() const { return _sigma; }
+  //! block indices (of the matrix given to solve()) of the dual rows, e.g.
+  //! the equality multipliers of a KKT system; every other block is primal.
+  //! Replaces the sign rule above until clearDualBlocks().
+  void setDualBlocks(std::vector<int> blocks) override {
+    std::sort(blocks.begin(), blocks.end());
+    blocks.erase(std::unique(blocks.begin(), blocks.end()), blocks.end());
+    _dualBlocks = std::move(blocks);
+    _dualBlocksKnown = true;
+    _dualRows.clear();
+  }
+  void clearDualBlocks() {
+    _dualBlocks.clear();
+    _dualBlocksKnown = false;
+    _dualRows.clear();
+  }
   //! maximum iterative-refinement steps (default 5). One fixed step is not
   //! always enough: on ill-conditioned KKT matrices (large barrier weights)
   //! each step removes only a factor delta / (lambda_min + delta) of the bias,
@@ -191,7 +230,10 @@ public:
 
   //! Attempted corrections, including a correction rejected for no improvement.
   int lastRefinementSteps() const { return _lastRefinementSteps; }
+  //! rows regularized in the last factorization: dual (-delta), primal
+  //! (+sigma)
   int lastRegularizedCount() const { return _numRegularized; }
+  int lastPrimalRegularizedCount() const { return _numPrimalRegularized; }
   //! All solve calls; solves whose answer came from the LU fallback (verified,
   //! or kept because it beat the LDL^T answer); LU attempts; verified LU
   //! successes; LU attempts that did not reach the tolerance.
@@ -239,7 +281,7 @@ public:
     bool success = false;
     if (ldltOK) {
       xx = _ldlt.solve(bb);
-      if (_fallbackTol > 0.0 || _numRegularized > 0 || _alwaysRefine)
+      if (_fallbackTol > 0.0 || regularized() || _alwaysRefine)
         success = refineAndCheck(xx, bb, normB);
       else
         success = xx.allFinite();
@@ -275,10 +317,16 @@ protected:
   bool _prePermuted = true;
   bool _failOnInaccurate = false;
   double _delta = 1e-9;
+  double _sigma = 0.0;
+  bool _dualBlocksKnown = false;
+  bool _primalOff = false; // factorization of K itself (marginal covariances)
+  std::vector<int> _dualBlocks;
+  std::vector<char> _dualRows; // per row, built from _dualBlocks
   int _refinementSteps = 5;
   double _refinementTol = 1e-12;
   int _lastRefinementSteps = 0;
   int _numRegularized = 0;
+  int _numPrimalRegularized = 0;
   double _fallbackTol = 1e-8;
   double _fallbackAbsTol = 0.0;
   long _fallbackUsedCount = 0;
@@ -352,7 +400,7 @@ protected:
     // also refine unregularized (e.g. SPD) systems while verification is on;
     // an accurate answer stops the loop before any correction
     const bool allowRefinement =
-        _numRegularized > 0 || _alwaysRefine || _fallbackTol > 0.0;
+        regularized() || _alwaysRefine || _fallbackTol > 0.0;
     if (allowRefinement && std::isfinite(rn)) {
       for (int k = 0; k < _refinementSteps; ++k) {
         if (static_cast<long double>(rn) <=
@@ -463,6 +511,7 @@ protected:
                                 _sparseMatrix.innerIndexPtr(),
                                 _sparseMatrix.valuePtr(), true);
       locateDiagonal();
+      locateDualRows(A);
       regularize();
       if (!samePattern()) {
         _ldlt.analyzePattern(_sparseMatrix);
@@ -476,6 +525,8 @@ protected:
         stats->timeSymbolicDecomposition = g2o::get_monotonic_time() - t;
     } else {
       this->_ccsMatrix->fillCCS(_sparseMatrix.valuePtr(), true);
+      if (_dualBlocksKnown && _dualRows.empty())
+        locateDualRows(A); // dual blocks given since the last init
       regularize();
     }
     // Reject invalid coefficients before entering either numeric factorization.
@@ -541,17 +592,45 @@ protected:
     _candidateResidual.resize(n);
   }
 
+  bool regularized() const {
+    return _numRegularized > 0 || _numPrimalRegularized > 0;
+  }
+
+  //! per row: 1 dual, 0 primal, from the dual blocks and the block layout of
+  //! A; empty (the sign rule) if no dual blocks are known
+  void locateDualRows(const g2o::SparseBlockMatrix<MatrixType> &A) {
+    _dualRows.clear();
+    if (!_dualBlocksKnown)
+      return;
+    const std::vector<int> &ends = A.rowBlockIndices();
+    _dualRows.assign(_diagIndex.size(), 0);
+    for (int b : _dualBlocks) {
+      if (b < 0 || b >= static_cast<int>(ends.size()))
+        continue; // not a block of this matrix
+      for (int r = b == 0 ? 0 : ends[b - 1]; r < ends[b]; ++r)
+        _dualRows[r] = 1;
+    }
+  }
+
   void regularize() {
     double *values = _sparseMatrix.valuePtr();
-    _numRegularized = 0;
+    _numRegularized = _numPrimalRegularized = 0;
+    const bool layout = _dualRows.size() == _diagIndex.size();
+    const double sigma = _primalOff ? 0.0 : _sigma;
     for (int c = 0; c < static_cast<int>(_diagIndex.size()); ++c) {
       const int k = _diagIndex[c];
-      if (_delta > 0.0 && k >= 0 && values[k] == 0.0) {
+      _regularization[c] = 0.0;
+      if (k < 0)
+        continue;
+      const bool dual = layout ? _dualRows[c] != 0 : !(values[k] > 0.0);
+      if (!dual && sigma > 0.0) {
+        values[k] += sigma;
+        _regularization[c] = sigma;
+        ++_numPrimalRegularized;
+      } else if (_delta > 0.0 && values[k] == 0.0) {
         values[k] = -_delta;
         _regularization[c] = -_delta;
         ++_numRegularized;
-      } else {
-        _regularization[c] = 0.0;
       }
     }
   }
@@ -565,7 +644,10 @@ protected:
   bool solveBlocks_impl(
       const g2o::SparseBlockMatrix<MatrixType> &A,
       std::function<void(g2o::MarginalCovarianceCholesky &)> compute) override {
-    if (!factorize(A))
+    _primalOff = true; // covariances of K, not of K + sigma I
+    const bool factorized = factorize(A);
+    _primalOff = false;
+    if (!factorized)
       return false;
     const Eigen::VectorXd &d = _ldlt.vectorD();
     if (_numRegularized > 0 || !d.allFinite() || (d.array() <= 0.0).any()) {

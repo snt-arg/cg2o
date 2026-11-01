@@ -129,6 +129,7 @@ int SparseOptimizerAL::optimize(int iterations, bool online) {
   bool ok = true;
 
   _start_point.prepare(); // multipliers and penalties of this solve
+  describeKKTStructure();
 
   ok = _algorithm->init(online);
   if (!ok) {

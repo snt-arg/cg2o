@@ -565,6 +565,7 @@ int SparseOptimizerISPD::optimize(int iterations, bool online) {
   }
 
   _iteration_stats.clear();
+  describeKKTStructure();
   // the start point prepares the starting point (cold, or the point of the
   // selected method), keeps the point of the next solve, and undoes and
   // retries a broken-down warm solve

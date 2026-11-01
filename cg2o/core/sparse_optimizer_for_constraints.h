@@ -236,6 +236,9 @@ protected:
   // chi2) and damp the multiplier rows of the KKT system too, which gave wrong
   // solutions without an error. std::invalid_argument for these two.
   void requireGaussNewton() const;
+  // tells a KKTStructureAware linear solver which blocks are the equality
+  // multipliers (dual rows); called by optimize()
+  void describeKKTStructure();
   std::set<OptimizableGraph::Edge *> _edgeEqSet; // Set of equality edges
 
   // solver parameter

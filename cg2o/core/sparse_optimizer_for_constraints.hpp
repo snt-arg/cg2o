@@ -27,12 +27,14 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 */
 
+#include "g2o/core/block_solver.h"
 #include "g2o/core/optimization_algorithm.h"
 #include "g2o/core/optimization_algorithm_dogleg.h"
 #include "g2o/core/optimization_algorithm_levenberg.h"
 #include "g2o/core/optimization_algorithm_with_hessian.h"
 #include "g2o/core/solver.h"
 #include "g2o/stuff/logger.h"
+#include "kkt_structure.h"
 #include "sparse_optimizer_for_constraints.h"
 #include <Eigen/Core>
 #include <algorithm>
@@ -111,6 +113,29 @@ void SparseOptimizerForConstraints<Derived>::requireGaussNewton() const {
         "constrained optimizers need the Gauss-Newton algorithm: Levenberg and "
         "Dogleg accept a step by the objective alone and damp the multiplier "
         "rows");
+}
+
+template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::describeKKTStructure() {
+  auto *withHessian =
+      dynamic_cast<g2o::OptimizationAlgorithmWithHessian *>(_algorithm);
+  if (!withHessian)
+    return;
+  auto *blockSolver = dynamic_cast<g2o::BlockSolverX *>(&withHessian->solver());
+  if (!blockSolver)
+    return;
+  auto *solver =
+      dynamic_cast<KKTStructureAware *>(&blockSolver->linearSolver());
+  if (!solver)
+    return;
+  // the system matrix has one block per active vertex, in Hessian-index
+  // order; AL keeps its multipliers fixed (not in the system)
+  std::vector<int> dual;
+  dual.reserve(_vEqLagrangeMultipliers.size());
+  for (auto *multiplier : _vEqLagrangeMultipliers)
+    if (multiplier->hessianIndex() >= 0)
+      dual.push_back(multiplier->hessianIndex());
+  solver->setDualBlocks(std::move(dual));
 }
 
 template <typename Derived>

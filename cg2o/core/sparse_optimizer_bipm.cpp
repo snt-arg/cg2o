@@ -182,6 +182,7 @@ int SparseOptimizerBIPM::optimize(int iterations, bool online) {
   bool outerLoopStop = false;
   bool ok = true;
   _start_point.prepare(); // kappa and equality multipliers of this solve
+  describeKKTStructure();
 
   ok = _algorithm->init(online);
   if (!ok) {
