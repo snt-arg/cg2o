@@ -225,6 +225,11 @@ protected:
   EdgeContainer _activeEdgesEq; ///< sorted according to EdgeIDCompare
   EdgeContainer _fixedEdgesEq, _fixedEdgesIneq;
   bool fixedConstraintsFeasible();
+  // _activeEdgesIneq, _activeEdgesEq and the fixed lists in the order of
+  // _activeEdges (EdgeIDCompare: insertion order). They are filled from sets
+  // of pointers; unsorted, sums over the edges (duality gap, statistics)
+  // depended on where the edges were in memory.
+  void sortConstraintContainers();
   // The constrained solvers set their own step (barrier, multiplier and
   // backtracking rules) and need the Gauss-Newton algorithm: Levenberg and
   // Dogleg accept a step by the objective alone (constraint edges have no

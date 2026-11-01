@@ -95,6 +95,15 @@ void SparseOptimizerForConstraints<Derived>::invalidateActiveStructure() {
 }
 
 template <typename Derived>
+void SparseOptimizerForConstraints<Derived>::sortConstraintContainers() {
+  const OptimizableGraph::EdgeIDCompare byId;
+  std::sort(_activeEdgesIneq.begin(), _activeEdgesIneq.end(), byId);
+  std::sort(_activeEdgesEq.begin(), _activeEdgesEq.end(), byId);
+  std::sort(_fixedEdgesIneq.begin(), _fixedEdgesIneq.end(), byId);
+  std::sort(_fixedEdgesEq.begin(), _fixedEdgesEq.end(), byId);
+}
+
+template <typename Derived>
 void SparseOptimizerForConstraints<Derived>::requireGaussNewton() const {
   if (dynamic_cast<const g2o::OptimizationAlgorithmLevenberg *>(_algorithm) ||
       dynamic_cast<const g2o::OptimizationAlgorithmDogleg *>(_algorithm))
@@ -394,6 +403,7 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
     //-----------------------------------------
   }
   sortVectorContainers();
+  sortConstraintContainers();
   bool indexMappingStatus = buildIndexMapping(_activeVertices);
   postIteration(-1);
   return indexMappingStatus;
@@ -477,6 +487,7 @@ bool SparseOptimizerForConstraints<Derived>::updateInitialization(
       _activeEdgesEq.push_back(e);
   }
   sortVectorContainers();
+  sortConstraintContainers();
   if (newVertices.empty() && newEdges.empty())
     return true;
   // addEdge() updates maximum workspace sizes, but does not allocate them.
@@ -589,6 +600,7 @@ bool SparseOptimizerForConstraints<Derived>::initializeOptimization(
     _activeVertices.push_back(*it);
 
   sortVectorContainers();
+  sortConstraintContainers();
   bool indexMappingStatus = buildIndexMapping(_activeVertices);
   postIteration(-1);
   return indexMappingStatus;
