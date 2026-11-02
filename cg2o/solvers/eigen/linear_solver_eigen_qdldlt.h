@@ -35,9 +35,13 @@ namespace cg2o {
  *  - primal rows: every diagonal entry receives +sigma, as OSQP adds sigma I
  *    to P: on every solve with setPrimalRegularization (default 0 = off), or
  *    only for solves that need it with the adaptive damping (default on).
- * With both, a KKT matrix [H J^T; J 0] with H positive semidefinite and J of
- * full row rank becomes quasi-definite: LDL^T exists for any symmetric
- * ordering and needs no pivoting. The constrained optimizers pass the dual
+ * A KKT matrix [H J^T; J 0] with H positive semidefinite becomes
+ * quasi-definite, [H + sigma I, J^T; J, -delta I] with sigma, delta > 0 (J of
+ * any rank): in exact arithmetic LDL^T then exists for any symmetric ordering
+ * without pivoting. delta alone is not enough: +delta on the zero primal
+ * diagonals does not make a singular H positive definite, so the undamped
+ * LDL^T can fail or be inaccurate; that is what the adaptive damping and the
+ * verification below are for. The constrained optimizers pass the dual
  * blocks (equality multipliers) before every optimize(), see
  * KKTStructureAware. Without them, a row is dual if its diagonal entry is
  * <= 0 and primal if it is > 0, which misses primal variables with a zero
@@ -69,8 +73,10 @@ namespace cg2o {
  * verification is enabled (fallbackTolerance() > 0, the default), or by
  * setAlwaysRefine(true). The same current residual serves refinement and
  * verification. Correction iterates are accepted only if their residual is
- * finite and strictly decreases. The final step is never reported successful
- * with an excessive residual when verification is enabled.
+ * finite and strictly decreases. Refinement stops as soon as the residual
+ * passes the verification tolerance (refinementTolerance() relative, default
+ * 1e-12, when verification is off). The final step is never reported
+ * successful with an excessive residual when verification is enabled.
  *
  * LDL^T symbolic analysis and the pre-permuted value map are reused while the
  * upper-triangle pattern stays fixed. The full symmetric LU pattern and its
@@ -171,7 +177,7 @@ public:
   bool init() override {
     _init = true;
     _sigmaMemory = 0.0; // a new solve sequence starts undamped
-    _exactFirst = true;
+    _luOfKFailed = false;
     _dampingLimitReached = false;
     return true;
   }
@@ -208,13 +214,15 @@ public:
   //! solver factorizes the damped matrix K + sigma I on the primal rows
   //! (-delta on the dual, +delta on primal zero diagonals), sigma = start,
   //! start * growth, ... <= max, which is quasi-definite and stable:
-  //!  1. refined against K itself (up to 20 steps), it gives the exact step
-  //!     when K is well enough conditioned; if not, the sparse LU of K gives
-  //!     it whenever K is not singular;
-  //!  2. if neither reaches the tolerance, K is singular (directions without
-  //!     cost, redundant equality constraints): the step of the damped system
-  //!     is used (as Levenberg's damping or IPOPT's inertia correction), and
-  //!     step 1 is skipped until init();
+  //!  1. refined against K itself (up to 20 steps), it gives the step of K,
+  //!     to the tolerance, when K is well enough conditioned; if not, the
+  //!     sparse LU of K is tried, until it has failed once before init();
+  //!  2. if neither reaches the tolerance, K is numerically singular
+  //!     (directions without cost, redundant equality constraints) or too
+  //!     ill-conditioned: the step of the damped system is used (as
+  //!     Levenberg's damping or IPOPT's inertia correction). Step 1 is
+  //!     decided again for every matrix, so later, easier matrices get the
+  //!     step of K again;
   //! raising sigma until one of them is accurate. The sigma found is used for
   //! the following solves until init(), which g2o calls at every optimize().
   //! Only when even the largest sigma fails, that damped system is solved
@@ -242,7 +250,8 @@ public:
   //! solves that returned a damped step (the remembered sigma included)
   long dampedSolveCount() const { return _dampedCount; }
   //! solves whose undamped LDL^T was not accurate and that still returned
-  //! the exact step (damped factorization refined against K, or LU of K)
+  //! the step of K to the tolerance (damped factorization refined against K,
+  //! or LU of K)
   long exactRecoveredCount() const { return _exactRecoveredCount; }
   //! maximum iterative-refinement steps (default 5). One fixed step is not
   //! always enough: on ill-conditioned KKT matrices (large barrier weights)
@@ -387,26 +396,30 @@ protected:
     const bool ldltOK = factorize(A);
     const double t = g2o::get_monotonic_time();
     bool success = false;
-    if (ldltOK && _sigmaNow > 0.0 && _exactFirst && _fallbackTol > 0.0) {
+    if (ldltOK && _sigmaNow > 0.0 && _fallbackTol > 0.0) {
       // the damped factorization is stable: refined against K itself it
-      // gives the exact step whenever K is well enough conditioned, and LU
-      // of K whenever K is not singular
+      // gives the step of K, to the tolerance, whenever K is well enough
+      // conditioned; if not, the LU of K is tried, until it fails once
       const int steps = _refinementSteps;
       const bool luAllowed = _luAllowed;
       _refinementSteps = std::max(steps, _exactRefinementSteps);
-      _luAllowed = true;
+      _luAllowed = !_luOfKFailed;
       _regularization.swap(_added);
       xx = _ldlt.solve(bb);
       _lastStepExact = refineAndCheck(xx, bb, normB) && _lastAccurate;
       _regularization.swap(_added);
+      const bool triedLU = _luAllowed && !_lastStepExact;
       _refinementSteps = steps;
       _luAllowed = luAllowed;
       if (_lastStepExact) {
         _solveTime += g2o::get_monotonic_time() - t;
         return true;
       }
-      // K is singular: damped steps until init()
-      _exactFirst = false;
+      // the step of K was not recovered to the tolerance: K is numerically
+      // singular, or too ill-conditioned for this attempt; the damped step
+      // follows, and the LU of K is not tried again until init()
+      if (triedLU)
+        _luOfKFailed = true;
       _lastAccurate = _lastInaccurate = false;
       _lastUsedFallback = false;
     }
@@ -461,8 +474,8 @@ protected:
   double _lastDamping = 0.0;
   long _dampedCount = 0;
   bool _lastAccurate = false, _lastInaccurate = false;
-  bool _luAllowed = true;  // false while the adaptive damping may still help
-  bool _exactFirst = true; // damped factorizations try the exact step first
+  bool _luAllowed = true;    // false while the adaptive damping may still help
+  bool _luOfKFailed = false; // LU of K failed in this solve sequence
   bool _dampingLimitReached = false; // even sigma max was not accurate
   bool _lastStepExact = false;       // exact step from a damped factorization
   long _exactRecoveredCount = 0;
@@ -554,8 +567,10 @@ protected:
         regularized() || _alwaysRefine || _fallbackTol > 0.0;
     if (allowRefinement && std::isfinite(rn)) {
       for (int k = 0; k < _refinementSteps; ++k) {
+        // stop at the accuracy the verification asks for
         if (static_cast<long double>(rn) <=
-            static_cast<long double>(_refinementTol) * normB)
+                static_cast<long double>(_refinementTol) * normB ||
+            (_fallbackTol > 0.0 && acceptable(rn, normB)))
           break;
         _candidate = _ldlt.solve(_residual);
         _candidate += xx;
@@ -632,6 +647,7 @@ protected:
         _residual.swap(_candidateResidual);
         recordResidual(rn, normB);
         ++_fallbackUsedCount;
+        _lastUsedFallback = true;
       }
       return false;
     }
@@ -733,6 +749,14 @@ protected:
           _diagIndex[c] = k;
           break;
         }
+    // g2o stores every diagonal block densely, explicit zeros included, so
+    // each row has its diagonal entry; a row without one cannot be
+    // regularized or damped
+    const long missing = std::count(_diagIndex.begin(), _diagIndex.end(), -1);
+    if (missing > 0)
+      G2O_WARN("LinearSolverEigenQDLDLT: {} rows without a diagonal entry are "
+               "not regularized",
+               missing);
     _regularization = Eigen::VectorXd::Zero(n);
     _added = Eigen::VectorXd::Zero(n);
     _residual.resize(n);
@@ -753,8 +777,12 @@ protected:
     const std::vector<int> &ends = A.rowBlockIndices();
     _dualRows.assign(_diagIndex.size(), 0);
     for (int b : _dualBlocks) {
-      if (b < 0 || b >= static_cast<int>(ends.size()))
-        continue; // not a block of this matrix
+      if (b < 0 || b >= static_cast<int>(ends.size())) {
+        G2O_WARN("LinearSolverEigenQDLDLT: dual block {} is not a block of "
+                 "the matrix ({} blocks); ignored",
+                 b, ends.size());
+        continue;
+      }
       for (int r = b == 0 ? 0 : ends[b - 1]; r < ends[b]; ++r)
         _dualRows[r] = 1;
     }
@@ -781,7 +809,8 @@ protected:
         ++_numPrimalRegularized;
       } else if (_delta > 0.0 && values[k] == 0.0) {
         // a known primal row (no cost, no inequality) gets +delta, a dual
-        // row -delta: the matrix stays quasi-definite
+        // row -delta: the signs of a quasi-definite matrix (quasi-definite
+        // itself only with sigma > 0 on every primal row)
         const bool primal = layout && !dual;
         values[k] = primal ? _delta : -_delta;
         _regularization[c] = damping > 0.0 ? 0.0 : values[k];
