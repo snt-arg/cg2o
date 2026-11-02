@@ -171,6 +171,8 @@ public:
   bool init() override {
     _init = true;
     _sigmaMemory = 0.0; // a new solve sequence starts undamped
+    _exactFirst = true;
+    _dampingLimitReached = false;
     return true;
   }
 
@@ -202,18 +204,25 @@ public:
     _dualRows.clear();
   }
   //! Adaptive damping (default on). A solve first runs as above, without
-  //! the LU fallback. If it fails or stays inaccurate after refinement, K is
-  //! singular or nearly so (directions without cost, redundant equality
-  //! constraints). The solver then solves the damped system K + sigma I on
-  //! the primal rows, -delta on the dual rows (both kept, the step is that of
-  //! the damped system, as with Levenberg's damping or IPOPT's inertia
-  //! correction), for sigma = start, start * growth, ... <= max until that
-  //! solve is accurate. The sigma found is used for the following solves
-  //! until init(), which g2o calls at every optimize(). Only when even the
-  //! largest sigma fails, that damped system is solved again with the LU
-  //! fallback, and its answer is used even if not accurate.
-  //! A solve that LDL^T does accurately is unchanged. Not used together with a
-  //! fixed setPrimalRegularization() > 0.
+  //! the LU fallback. If it fails or stays inaccurate after refinement, the
+  //! solver factorizes the damped matrix K + sigma I on the primal rows
+  //! (-delta on the dual, +delta on primal zero diagonals), sigma = start,
+  //! start * growth, ... <= max, which is quasi-definite and stable:
+  //!  1. refined against K itself (up to 20 steps), it gives the exact step
+  //!     when K is well enough conditioned; if not, the sparse LU of K gives
+  //!     it whenever K is not singular;
+  //!  2. if neither reaches the tolerance, K is singular (directions without
+  //!     cost, redundant equality constraints): the step of the damped system
+  //!     is used (as Levenberg's damping or IPOPT's inertia correction), and
+  //!     step 1 is skipped until init();
+  //! raising sigma until one of them is accurate. The sigma found is used for
+  //! the following solves until init(), which g2o calls at every optimize().
+  //! Only when even the largest sigma fails, that damped system is solved
+  //! again with the LU fallback, and its answer is used even if not
+  //! accurate; until init() the following solves then skip the sigma ladder
+  //! (undamped with LU, then the largest sigma with LU). A solve that LDL^T
+  //! does accurately is unchanged. Not used together with a fixed
+  //! setPrimalRegularization() > 0.
   void setAdaptiveDamping(bool on) { _adaptive = on; }
   bool adaptiveDamping() const { return _adaptive; }
   void setAdaptiveDampingRange(double start, double max, double growth = 10.0) {
@@ -227,10 +236,14 @@ public:
   }
   double adaptiveDampingStart() const { return _sigmaStart; }
   double adaptiveDampingMax() const { return _sigmaMax; }
-  //! sigma of the damped system the last solve used (0: undamped)
+  //! sigma of the damped system whose step the last solve returned (0: the
+  //! step solves K)
   double lastDamping() const { return _lastDamping; }
-  //! solves that needed damping (the remembered sigma included)
+  //! solves that returned a damped step (the remembered sigma included)
   long dampedSolveCount() const { return _dampedCount; }
+  //! solves whose undamped LDL^T was not accurate and that still returned
+  //! the exact step (damped factorization refined against K, or LU of K)
+  long exactRecoveredCount() const { return _exactRecoveredCount; }
   //! maximum iterative-refinement steps (default 5). One fixed step is not
   //! always enough: on ill-conditioned KKT matrices (large barrier weights)
   //! each step removes only a factor delta / (lambda_min + delta) of the bias,
@@ -320,25 +333,30 @@ public:
     // with the adaptive damping the LU fallback is the last resort: a solve
     // that LDL^T cannot do accurately is usually singular, where LU fails too
     const bool adaptive = _adaptive && _sigma == 0.0;
-    _luAllowed = !adaptive;
+    _luAllowed = !adaptive || _dampingLimitReached;
     _sigmaNow = adaptive ? _sigmaMemory : 0.0;
     bool success = attempt(A, xx, bb, normB);
     if (adaptive && !_lastAccurate && _matrixReady &&
-        !(success = damp(A, xx, bb, normB))) {
+        (_dampingLimitReached || !(success = damp(A, xx, bb, normB)))) {
       // damping limit reached: the most damped system (the best conditioned
-      // one) once more, now with the LU fallback; its answer is used even if
-      // not accurate, as without damping
+      // one) with the LU fallback; its answer is used even if not accurate,
+      // as without damping. Until init() the following solves skip the
+      // sigma ladder and allow LU at once, which bounds their cost.
+      _dampingLimitReached = true;
       _luAllowed = true;
+      _sigmaNow = _sigmaMax;
       success = attempt(A, xx, bb, normB);
-      if (success && _lastAccurate)
-        _sigmaMemory = _sigmaNow;
     }
     _luAllowed = true;
     if (_lastInaccurate)
       ++_inaccurateCount;
     if (success && _sigmaNow > 0.0) {
-      _lastDamping = _sigmaNow;
-      ++_dampedCount;
+      if (_lastStepExact) {
+        ++_exactRecoveredCount;
+      } else {
+        _lastDamping = _sigmaNow;
+        ++_dampedCount;
+      }
     }
     g2o::G2OBatchStatistics *stats = g2o::G2OBatchStatistics::globalStats();
     if (stats) {
@@ -365,9 +383,33 @@ protected:
                const ConstVectorMap &bb, double normB) {
     _lastAccurate = _lastInaccurate = false;
     _lastUsedFallback = false;
+    _lastStepExact = false;
     const bool ldltOK = factorize(A);
     const double t = g2o::get_monotonic_time();
     bool success = false;
+    if (ldltOK && _sigmaNow > 0.0 && _exactFirst && _fallbackTol > 0.0) {
+      // the damped factorization is stable: refined against K itself it
+      // gives the exact step whenever K is well enough conditioned, and LU
+      // of K whenever K is not singular
+      const int steps = _refinementSteps;
+      const bool luAllowed = _luAllowed;
+      _refinementSteps = std::max(steps, _exactRefinementSteps);
+      _luAllowed = true;
+      _regularization.swap(_added);
+      xx = _ldlt.solve(bb);
+      _lastStepExact = refineAndCheck(xx, bb, normB) && _lastAccurate;
+      _regularization.swap(_added);
+      _refinementSteps = steps;
+      _luAllowed = luAllowed;
+      if (_lastStepExact) {
+        _solveTime += g2o::get_monotonic_time() - t;
+        return true;
+      }
+      // K is singular: damped steps until init()
+      _exactFirst = false;
+      _lastAccurate = _lastInaccurate = false;
+      _lastUsedFallback = false;
+    }
     if (ldltOK) {
       xx = _ldlt.solve(bb);
       if (_fallbackTol > 0.0 || regularized() || _alwaysRefine)
@@ -419,13 +461,19 @@ protected:
   double _lastDamping = 0.0;
   long _dampedCount = 0;
   bool _lastAccurate = false, _lastInaccurate = false;
-  bool _luAllowed = true; // false while the adaptive damping may still help
+  bool _luAllowed = true;  // false while the adaptive damping may still help
+  bool _exactFirst = true; // damped factorizations try the exact step first
+  bool _dampingLimitReached = false; // even sigma max was not accurate
+  bool _lastStepExact = false;       // exact step from a damped factorization
+  long _exactRecoveredCount = 0;
+  Eigen::VectorXd _added; // all regularization of the factorized matrix
   double _solveTime = 0.0;
   bool _dualBlocksKnown = false;
   bool _primalOff = false; // factorization of K itself (marginal covariances)
   std::vector<int> _dualBlocks;
   std::vector<char> _dualRows; // per row, built from _dualBlocks
   int _refinementSteps = 5;
+  int _exactRefinementSteps = 20; // refinement against K of a damped factor
   double _refinementTol = 1e-12;
   int _lastRefinementSteps = 0;
   int _numRegularized = 0;
@@ -686,6 +734,7 @@ protected:
           break;
         }
     _regularization = Eigen::VectorXd::Zero(n);
+    _added = Eigen::VectorXd::Zero(n);
     _residual.resize(n);
     _candidate.resize(n);
     _candidateResidual.resize(n);
@@ -721,13 +770,14 @@ protected:
     const double damping = _primalOff ? 0.0 : _sigmaNow;
     for (int c = 0; c < static_cast<int>(_diagIndex.size()); ++c) {
       const int k = _diagIndex[c];
-      _regularization[c] = 0.0;
+      _regularization[c] = _added[c] = 0.0;
       if (k < 0)
         continue;
       const bool dual = layout ? _dualRows[c] != 0 : !(values[k] > 0.0);
       if (!dual && (sigma > 0.0 || damping > 0.0)) {
         values[k] += sigma + damping;
         _regularization[c] = sigma;
+        _added[c] = sigma + damping;
         ++_numPrimalRegularized;
       } else if (_delta > 0.0 && values[k] == 0.0) {
         // a known primal row (no cost, no inequality) gets +delta, a dual
@@ -735,6 +785,7 @@ protected:
         const bool primal = layout && !dual;
         values[k] = primal ? _delta : -_delta;
         _regularization[c] = damping > 0.0 ? 0.0 : values[k];
+        _added[c] = values[k];
         ++(primal ? _numPrimalRegularized : _numRegularized);
       }
     }
