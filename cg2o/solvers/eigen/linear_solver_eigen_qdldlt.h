@@ -30,10 +30,11 @@ namespace cg2o {
  *
  * The incoming matrix K is stored as its upper triangle and regularized to
  * K_reg = K + R, R diagonal:
- *  - dual rows: an exactly-zero diagonal entry receives -delta
- *    (setDualRegularization, default 1e-9);
- *  - primal rows: every diagonal entry receives +sigma
- *    (setPrimalRegularization, default 0 = off), as OSQP adds sigma I to P.
+ *  - an exactly-zero diagonal entry receives -delta on a dual row and +delta
+ *    on a row known to be primal (setDualRegularization, default 1e-9);
+ *  - primal rows: every diagonal entry receives +sigma, as OSQP adds sigma I
+ *    to P: on every solve with setPrimalRegularization (default 0 = off), or
+ *    only for solves that need it with the adaptive damping (default on).
  * With both, a KKT matrix [H J^T; J 0] with H positive semidefinite and J of
  * full row rank becomes quasi-definite: LDL^T exists for any symmetric
  * ordering and needs no pivoting. The constrained optimizers pass the dual
@@ -42,15 +43,22 @@ namespace cg2o {
  * <= 0 and primal if it is > 0, which misses primal variables with a zero
  * diagonal (no cost, no inequality).
  *
- * Primal regularization matters when the primal block is singular in a
- * direction no constraint fixes (variables without cost, e.g. a terminal-only
- * cost): then K itself is singular, and in tests LDL^T with delta alone (or
- * LU) stalled or failed while sigma ~1e-6 solved in a few iterations. On
- * well-posed problems it only adds refinement steps, and a large sigma
- * (>= 1e-4) leaves the refinement short of the tolerance (LU fallbacks).
+ * Singular K: when the primal block is singular in a direction no
+ * constraint fixes (variables without cost, a terminal-only cost) or the
+ * equality constraints are redundant, no exact step exists, and LDL^T with
+ * delta alone (or LU) stalls or fails. The adaptive damping (default on, see
+ * setAdaptiveDamping) then solves K + sigma I on the primal rows, -delta on
+ * the dual rows, with sigma from 1e-6 upwards, only for such solves: in
+ * tests it converged in 4 and 13 iterations where the undamped solver hit
+ * the 200-iteration cap or failed at once, and it left the solutions of
+ * well-posed problems bitwise unchanged. A fixed sigma on every solve
+ * (setPrimalRegularization) only adds refinement steps on well-posed
+ * problems, and a large one (>= 1e-4) leaves the refinement short of the
+ * tolerance (LU fallbacks).
  * Any regularization already applied by the caller remains part of K.
  *
- * Accuracy is measured against K, removing only this solver's own R:
+ * Accuracy is measured against K, removing only this solver's own R (a
+ * damped solve is measured against the damped system):
  *     ||b - K*x||_inf <= fallbackAbsoluteTolerance()
  *                       + fallbackTolerance() * ||b||_inf.
  * Default: relative tolerance 1e-8, absolute tolerance 0. Setting the relative
@@ -162,6 +170,7 @@ public:
 
   bool init() override {
     _init = true;
+    _sigmaMemory = 0.0; // a new solve sequence starts undamped
     return true;
   }
 
@@ -192,6 +201,36 @@ public:
     _dualBlocksKnown = false;
     _dualRows.clear();
   }
+  //! Adaptive damping (default on). A solve first runs as above, without
+  //! the LU fallback. If it fails or stays inaccurate after refinement, K is
+  //! singular or nearly so (directions without cost, redundant equality
+  //! constraints). The solver then solves the damped system K + sigma I on
+  //! the primal rows, -delta on the dual rows (both kept, the step is that of
+  //! the damped system, as with Levenberg's damping or IPOPT's inertia
+  //! correction), for sigma = start, start * growth, ... <= max until that
+  //! solve is accurate. The sigma found is used for the following solves
+  //! until init(), which g2o calls at every optimize(). Only when even the
+  //! largest sigma fails, that damped system is solved again with the LU
+  //! fallback, and its answer is used even if not accurate.
+  //! A solve that LDL^T does accurately is unchanged. Not used together with a
+  //! fixed setPrimalRegularization() > 0.
+  void setAdaptiveDamping(bool on) { _adaptive = on; }
+  bool adaptiveDamping() const { return _adaptive; }
+  void setAdaptiveDampingRange(double start, double max, double growth = 10.0) {
+    if (!(start > 0.0) || !(max >= start) || !std::isfinite(max) ||
+        !(growth > 1.0) || !std::isfinite(growth))
+      throw std::invalid_argument(
+          "adaptive damping: 0 < start <= max, growth > 1");
+    _sigmaStart = start;
+    _sigmaMax = max;
+    _sigmaGrowth = growth;
+  }
+  double adaptiveDampingStart() const { return _sigmaStart; }
+  double adaptiveDampingMax() const { return _sigmaMax; }
+  //! sigma of the damped system the last solve used (0: undamped)
+  double lastDamping() const { return _lastDamping; }
+  //! solves that needed damping (the remembered sigma included)
+  long dampedSolveCount() const { return _dampedCount; }
   //! maximum iterative-refinement steps (default 5). One fixed step is not
   //! always enough: on ill-conditioned KKT matrices (large barrier weights)
   //! each step removes only a factor delta / (lambda_min + delta) of the bias,
@@ -231,7 +270,7 @@ public:
   //! Attempted corrections, including a correction rejected for no improvement.
   int lastRefinementSteps() const { return _lastRefinementSteps; }
   //! rows regularized in the last factorization: dual (-delta), primal
-  //! (+sigma)
+  //! (+sigma, damping, or +delta on a zero diagonal)
   int lastRegularizedCount() const { return _numRegularized; }
   int lastPrimalRegularizedCount() const { return _numPrimalRegularized; }
   //! All solve calls; solves whose answer came from the LU fallback (verified,
@@ -262,6 +301,8 @@ public:
     ++_solveCount;
     _lastRefinementSteps = 0;
     _lastUsedFallback = false;
+    _lastDamping = 0.0;
+    _solveTime = 0.0;
     _lastResidualNorm = _lastRelativeResidual =
         std::numeric_limits<double>::quiet_NaN();
     const int n = A.rows();
@@ -276,6 +317,54 @@ public:
     if (!bb.allFinite())
       return fail(x, n);
     const double normB = bb.cwiseAbs().maxCoeff();
+    // with the adaptive damping the LU fallback is the last resort: a solve
+    // that LDL^T cannot do accurately is usually singular, where LU fails too
+    const bool adaptive = _adaptive && _sigma == 0.0;
+    _luAllowed = !adaptive;
+    _sigmaNow = adaptive ? _sigmaMemory : 0.0;
+    bool success = attempt(A, xx, bb, normB);
+    if (adaptive && !_lastAccurate && _matrixReady &&
+        !(success = damp(A, xx, bb, normB))) {
+      // damping limit reached: the most damped system (the best conditioned
+      // one) once more, now with the LU fallback; its answer is used even if
+      // not accurate, as without damping
+      _luAllowed = true;
+      success = attempt(A, xx, bb, normB);
+      if (success && _lastAccurate)
+        _sigmaMemory = _sigmaNow;
+    }
+    _luAllowed = true;
+    if (_lastInaccurate)
+      ++_inaccurateCount;
+    if (success && _sigmaNow > 0.0) {
+      _lastDamping = _sigmaNow;
+      ++_dampedCount;
+    }
+    g2o::G2OBatchStatistics *stats = g2o::G2OBatchStatistics::globalStats();
+    if (stats) {
+      stats->timeNumericDecomposition += _solveTime;
+      if (success)
+        stats->choleskyNNZ =
+            _lastUsedFallback ? _lu.nnzL() + _lu.nnzU()
+                              : _ldlt.matrixL().nestedExpression().nonZeros();
+    }
+    if (!success) {
+      // a failed undamped factorization is expected with the damping: the
+      // matrix is written only when the whole solve fails
+      if (this->writeDebug())
+        A.writeOctave("debug.txt");
+      return fail(x, n);
+    }
+    return true;
+  }
+
+protected:
+  //! one factorization and solve of the current system (sigma = _sigmaNow);
+  //! sets _lastAccurate and _lastInaccurate (verified and not accurate)
+  bool attempt(const g2o::SparseBlockMatrix<MatrixType> &A, VectorMap &xx,
+               const ConstVectorMap &bb, double normB) {
+    _lastAccurate = _lastInaccurate = false;
+    _lastUsedFallback = false;
     const bool ldltOK = factorize(A);
     const double t = g2o::get_monotonic_time();
     bool success = false;
@@ -284,32 +373,37 @@ public:
       if (_fallbackTol > 0.0 || regularized() || _alwaysRefine)
         success = refineAndCheck(xx, bb, normB);
       else
-        success = xx.allFinite();
+        success = _lastAccurate = xx.allFinite();
     } else if (_matrixReady && _fallbackTol > 0.0) {
       // Assembly succeeded but numeric LDL^T failed. No LDL^T solve/refinement.
       recordResidual(std::numeric_limits<double>::infinity(), normB);
-      success = solveWithLU(xx, bb, normB);
+      success = _lastAccurate = _luAllowed && solveWithLU(xx, bb, normB);
       if (!success) {
-        ++_inaccurateCount;
+        _lastInaccurate = true;
         success = !_failOnInaccurate && std::isfinite(_lastResidualNorm) &&
                   xx.allFinite() &&
                   _lastResidualNorm < std::numeric_limits<double>::infinity();
       }
     }
-    g2o::G2OBatchStatistics *stats = g2o::G2OBatchStatistics::globalStats();
-    if (stats) {
-      stats->timeNumericDecomposition += g2o::get_monotonic_time() - t;
-      if (success)
-        stats->choleskyNNZ =
-            _lastUsedFallback ? _lu.nnzL() + _lu.nnzU()
-                              : _ldlt.matrixL().nestedExpression().nonZeros();
-    }
-    if (!success)
-      return fail(x, n);
-    return true;
+    _solveTime += g2o::get_monotonic_time() - t;
+    return success;
   }
 
-protected:
+  //! the undamped solve was not accurate: damped systems with increasing
+  //! sigma until one is solved accurately; false at the damping limit
+  bool damp(const g2o::SparseBlockMatrix<MatrixType> &A, VectorMap &xx,
+            const ConstVectorMap &bb, double normB) {
+    for (double sigma = std::max(_sigmaNow * _sigmaGrowth, _sigmaStart);
+         sigma <= _sigmaMax * (1.0 + 1e-12); sigma *= _sigmaGrowth) {
+      _sigmaNow = sigma;
+      if (attempt(A, xx, bb, normB) && _lastAccurate) {
+        _sigmaMemory = sigma;
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool _init = true;
   bool _analyzed = false;
   bool _matrixReady = false;
@@ -318,6 +412,15 @@ protected:
   bool _failOnInaccurate = false;
   double _delta = 1e-9;
   double _sigma = 0.0;
+  bool _adaptive = true;
+  double _sigmaStart = 1e-6, _sigmaMax = 1e2, _sigmaGrowth = 10.0;
+  double _sigmaMemory = 0.0; // damping found in this solve sequence
+  double _sigmaNow = 0.0;    // damping of the current attempt
+  double _lastDamping = 0.0;
+  long _dampedCount = 0;
+  bool _lastAccurate = false, _lastInaccurate = false;
+  bool _luAllowed = true; // false while the adaptive damping may still help
+  double _solveTime = 0.0;
   bool _dualBlocksKnown = false;
   bool _primalOff = false; // factorization of K itself (marginal covariances)
   std::vector<int> _dualBlocks;
@@ -419,12 +522,10 @@ protected:
     }
     recordResidual(rn, normB);
     if (_fallbackTol == 0.0)
-      return xx.allFinite();
-    if (acceptable(rn, normB))
-      return true;
-    if (solveWithLU(xx, bb, normB, rn))
-      return true;
-    ++_inaccurateCount;
+      return _lastAccurate = xx.allFinite();
+    if (acceptable(rn, normB) || (_luAllowed && solveWithLU(xx, bb, normB, rn)))
+      return _lastAccurate = true;
+    _lastInaccurate = true;
     return !_failOnInaccurate && xx.allFinite();
   }
 
@@ -543,8 +644,6 @@ protected:
     if (stats)
       stats->timeNumericDecomposition = g2o::get_monotonic_time() - t;
     if (_ldlt.info() != Eigen::Success) {
-      if (this->writeDebug())
-        A.writeOctave("debug.txt");
       G2O_DEBUG("QDLDLT numeric factorization failed");
       return false;
     }
@@ -617,20 +716,26 @@ protected:
     _numRegularized = _numPrimalRegularized = 0;
     const bool layout = _dualRows.size() == _diagIndex.size();
     const double sigma = _primalOff ? 0.0 : _sigma;
+    // adaptive damping is part of the system solved: not removed by the
+    // refinement, and neither is delta then
+    const double damping = _primalOff ? 0.0 : _sigmaNow;
     for (int c = 0; c < static_cast<int>(_diagIndex.size()); ++c) {
       const int k = _diagIndex[c];
       _regularization[c] = 0.0;
       if (k < 0)
         continue;
       const bool dual = layout ? _dualRows[c] != 0 : !(values[k] > 0.0);
-      if (!dual && sigma > 0.0) {
-        values[k] += sigma;
+      if (!dual && (sigma > 0.0 || damping > 0.0)) {
+        values[k] += sigma + damping;
         _regularization[c] = sigma;
         ++_numPrimalRegularized;
       } else if (_delta > 0.0 && values[k] == 0.0) {
-        values[k] = -_delta;
-        _regularization[c] = -_delta;
-        ++_numRegularized;
+        // a known primal row (no cost, no inequality) gets +delta, a dual
+        // row -delta: the matrix stays quasi-definite
+        const bool primal = layout && !dual;
+        values[k] = primal ? _delta : -_delta;
+        _regularization[c] = damping > 0.0 ? 0.0 : values[k];
+        ++(primal ? _numPrimalRegularized : _numRegularized);
       }
     }
   }
@@ -650,7 +755,8 @@ protected:
     if (!factorized)
       return false;
     const Eigen::VectorXd &d = _ldlt.vectorD();
-    if (_numRegularized > 0 || !d.allFinite() || (d.array() <= 0.0).any()) {
+    // covariances of K itself: none of this solver's regularization
+    if (regularized() || !d.allFinite() || (d.array() <= 0.0).any()) {
       G2O_WARN("LinearSolverEigenQDLDLT: marginal covariances need a positive "
                "definite system");
       return false;
