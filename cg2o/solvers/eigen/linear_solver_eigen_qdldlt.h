@@ -567,10 +567,12 @@ protected:
         regularized() || _alwaysRefine || _fallbackTol > 0.0;
     if (allowRefinement && std::isfinite(rn)) {
       for (int k = 0; k < _refinementSteps; ++k) {
-        // stop at the accuracy the verification asks for
+        // Undamped solves refine to the refinement tolerance: a residual that only passes the verification
+        // tolerance can still leave an ill-conditioned KKT step visibly off. Damped solves (singular K) stop at
+        // the verification tolerance, which the refinement against K may never get beyond.
         if (static_cast<long double>(rn) <=
                 static_cast<long double>(_refinementTol) * normB ||
-            (_fallbackTol > 0.0 && acceptable(rn, normB)))
+            (_sigmaNow > 0.0 && _fallbackTol > 0.0 && acceptable(rn, normB)))
           break;
         _candidate = _ldlt.solve(_residual);
         _candidate += xx;
