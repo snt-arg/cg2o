@@ -6,10 +6,13 @@
 
 ## Important Note
 
-The experiment video is available through Google Drive.  
-Please note that the link in the paper may not work, so the experiment video should be opened using the link below:
+Code: The updated version of the cg2o library is available in the
+anonymized repository:
+https://anonymous.4open.science/r/cg2o/README.md
+The README provides the links to the repositories of both benchmarks and videos,
+the MACC benchmark and the quadrotor benchmark.
 
-[Experiment Video](https://drive.google.com/file/d/1D5Szbq0rx6m6J8egvvjbGFpykSk1dnAy/view)
+
 
 ---
 
