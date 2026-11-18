@@ -1,130 +1,183 @@
-# cg2o: Constrained Factor Graph Optimization 
+# cg2o: Constrained Factor Graph Optimization
 
-> **cg2o** — Constrained General Graph Optimization  
-> A modern extension of **g2o** for **hard-constrained factor graph optimization**, introducing native support for **nonlinear inequality and equality constraints** using advanced optimization methods for robotics, control, and large-scale sparse systems.
+> **cg2o** (Constrained General Graph Optimization) extends **g2o** with nonlinear **equality and inequality
+> constraints** as native factors, solved by an **infeasible-start primal–dual interior-point method (ISPD-IPM)**
+> that keeps the sparse structure of the factor graph. It targets nonlinear MPC, trajectory optimization and other
+> constrained sparse problems in robotics.
 
+This repository contains the library of the paper
 
-## Important Note
+**cg2o: Constrained Factor Graph Optimization via an Infeasible-Start Primal–Dual Interior-Point Method**
 
-The experiment video is available through Google Drive.  
-Please note that the link in the paper may not work, so the experiment video should be opened using the link below:
+---
 
-[Experiment Video](https://drive.google.com/file/d/1D5Szbq0rx6m6J8egvvjbGFpykSk1dnAy/view)
+## Important notes
+
+* **MACC benchmark (paper, Sec. VI).** The code and scripts that reproduce the adaptive cruise control results of
+  the paper (Tables IV, V, VII and Figs. 2, 3, 4, 7) are in a separate repository:
+  **[MACC benchmark of cg2o](https://anonymous.4open.science/r/cg2o-macc-benchmark/README.md)**. It builds this library at the commit used for the paper and
+  writes the paper's tables and figures from every run.
+* **Experiment video.** The video of the paper is in the MACC benchmark repository: **`paper/Video.mp4`**.
+  It is also available on Google Drive:
+  [Experiment Video](https://drive.google.com/file/d/1D5Szbq0rx6m6J8egvvjbGFpykSk1dnAy/view)
+  (the link printed in the paper may not open; use this one).
+* **Quadrotor benchmark (paper, Sec. VII).** *Coming soon:* the code of the quadrotor MPC benchmark (PX4
+  software-in-the-loop flights) will be linked here: **QUADROTOR_BENCHMARK_URL**. Its videos will be placed in
+  [`videos/`](videos/).
 
 ---
 
 ## Overview
 
-Factor graph optimization has become a standard tool in robotics for SLAM, state estimation, calibration, and trajectory optimization. However, classical frameworks such as g2o were primarily designed for unconstrained least-squares problems.
+Factor graph optimization is a standard tool in robotics for SLAM, state estimation, calibration and trajectory
+optimization. Classical frameworks such as g2o solve unconstrained nonlinear least-squares problems; constraints
+have to be added as soft penalties.
 
-**cg2o** extends this paradigm to solve **general constrained nonlinear sparse optimization problems** while preserving the efficiency, modularity, and sparse structure of factor graphs.
+**cg2o** keeps the factor-graph modelling of g2o and adds hard constraints:
 
-The library introduces native constrained optimization solvers including:
+* equality constraints `h(x) = 0` (e.g. system dynamics, kinematic or calibration constraints);
+* inequality constraints `g(x) <= 0` (e.g. actuator limits, speed bounds, safety distances, collision avoidance).
 
-- **ISPD-IPM** — Infeasible-Start Primal-Dual Interior Point Method (**main contribution of the paper**)
-- **BIPM** — Barrier Interior Point Method
-- **AL** — Augmented Lagrangian Method
+Each constraint is a factor (edge) of the graph, so existing g2o vertices, cost edges and models can be reused.
 
-This repository contains the implementation used in the paper:
+Results reported in the paper:
 
-**cg2o: A Constrained Factor Graph Solver via the Infeasible Start Interior Point Method for Nonlinear MPC**
-
----
-
-## Why cg2o?
-
-cg2o instead solves constrained problems directly on sparse factor graphs, enabling:
-
-- Sparse scalable optimization
-- Native graph abstraction
-- Fast real-time MPC
-- Equality + inequality constraints
-- Reuse of existing g2o models
-- Multiple constrained solvers in one framework
+* adaptive cruise control: up to **54 % fewer iterations** than a tuned barrier-based factor graph solver from the
+  same feasible start; from an infeasible cold start **4.6 to 11.2 times faster** than tuned IPOPT;
+* quadrotor MPC: all 20 PX4 software-in-the-loop flights completed from randomized starts, a feasible solution in
+  every solve despite 91 % obstacle-infeasible initializations, **3.8×** (cold) and **6.7×** (warm) faster than
+  IPOPT with HSL solvers.
 
 ---
 
-## Main Scientific Contribution
+## Features
 
-The key innovation is the implementation of the **ISPD-IPM constrained factor graph solver**.
+**Solvers**
 
-### Traditional Barrier Methods and Augmented Largained Methods Require
+| class | method | start |
+|---|---|---|
+| `cg2o::SparseOptimizerISPD` | **ISPD-IPM**, infeasible-start primal–dual interior-point method (main method of the paper, recommended) | any point, also infeasible |
+| `cg2o::SparseOptimizerBIPM` | barrier interior-point method | strictly feasible point |
+| `cg2o::SparseOptimizerAL` | augmented Lagrangian method | any point |
 
-- Strictly feasible initialization
-- Nested outer/inner loops
-- Sensitive parameter tuning
+**ISPD-IPM**
 
-### cg2o ISPD-IPM Provides
+* infeasible initialization: no feasible starting point needed;
+* a single optimization loop instead of nested outer / inner loops;
+* inequality constraints as dedicated factors derived from the KKT conditions, with auxiliary (slack) variables;
+* lower-bounded adaptive barrier update;
+* minimum-threshold backtracking with positivity-preserving safeguards for the auxiliary variables;
+* receding-horizon warm starts of primal and dual variables for MPC;
+* all options available through setters (`setKappaInitial`, `setKappaFinal`, `setKappaUpdateFactor`, `setTau`,
+  `setIneqBacktrackingStepMin`, `setAuxBacktrackingStepMin`, `setAuxScalingFactor`, `setEqualityRegularization`, ...).
 
-- Infeasible initialization
-- Unified single optimization loop
-- Dedicated inequality factors from KKT conditions
-- Real-time performance
+**Linear solvers for the indefinite KKT system**
 
-Reported in the paper: up to **58% fewer iterations** than a previous barrier-based factor graph solver.
+| family | solvers | notes |
+|---|---|---|
+| unregularized LDLᵀ | **QDLDLT** (`LinearSolverEigenQDLDLT`) | always built; exact KKT step with iterative refinement and LU fallback |
+| sparse LU | UMFPACK (`LinearSolverEigenUmfPackLU`), Eigen LU, PARDISO (`LinearSolverEigenPardisoLU`, needs Intel MKL) | UMFPACK is built by default |
+| regularized LDLᵀ / Cholesky | CHOLMOD, Eigen LDLT, CHOLMOD fast | need a small equality regularization (`setEqualityRegularization`, e.g. 1e-8) |
+| others (Eigen) | QR, SVD, dense LU / QR, BiCGSTAB, LSCG | for testing and small problems |
+
+**Other**
+
+* works with the g2o vertex / edge / block-solver API;
+* installs a CMake package (`find_package(cg2o)`, targets `cg2o::...`);
+* optional export of every linear system for debugging (`-DCG2O_DEBUG_LINEAR_SOLVER=ON`);
+* Docker image with all dependencies, and a ROS 2 example.
 
 ---
 
-## Available Solvers
+## Installation
+
+Tested on Ubuntu 22.04 and 24.04 (GCC, CMake ≥ 3.22, C++20).
+
+### 1. Dependencies
+
+```bash
+sudo apt update
+sudo apt install -y git build-essential cmake libeigen3-dev libfmt-dev libsuitesparse-dev libomp-dev
+```
+
+### 2. Build and install
+
+```bash
+git clone https://github.com/snt-arg/cg2o.git
+cd cg2o
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+      -DUSE_G2O_SOLVERS=ON -DCG2O_BUILD_EIGEN_SOLVERS=ON \
+      -DCMAKE_INSTALL_PREFIX="$PWD/install/cg2o"
+cmake --build build -j"$(nproc)"
+cmake --install build
+```
+
+If g2o is not installed, the configure step downloads and builds the tested g2o revision itself
+(`scripts/build_g2o.sh`, into `install/externals/g2o/`). An installed g2o is used instead if CMake finds it; it must
+be built with `G2O_NO_IMPLICIT_OWNERSHIP_OF_OBJECTS=ON` and with the same `-march=native` setting as cg2o.
+
+### 3. Build options
+
+| option | default | meaning |
+|---|---|---|
+| `USE_G2O_SOLVERS` | OFF | g2o's CHOLMOD and CSparse linear solvers |
+| `CG2O_BUILD_UMFPACK` | ON | UMFPACK LU solver |
+| `CG2O_BUILD_EIGEN_SOLVERS` | OFF | Eigen solvers (LDLT, LU, QR, ...) |
+| `CG2O_BUILD_PARDISO` | OFF | PARDISO LU solver (needs Intel oneAPI MKL in `/opt/intel/oneapi/mkl/latest`) |
+| `CG2O_BUILD_EXAMPLES` | OFF | the examples in `cg2o/examples/` |
+| `CG2O_MARCH_NATIVE` | ON | `-march=native`; every program that links cg2o must use the same setting |
+| `CG2O_DEBUG_LINEAR_SOLVER` | OFF | write every linear system to text files |
+
+### 4. Use cg2o in your project
+
+```cmake
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")   # same setting as cg2o (CG2O_MARCH_NATIVE)
+find_package(cg2o REQUIRED)
+target_link_libraries(my_app PRIVATE cg2o::cg2o)
+```
+
+Point CMake to cg2o and, if cg2o built it, to its g2o:
+
+```bash
+cmake -S . -B build \
+  -DCMAKE_PREFIX_PATH="/path/to/cg2o/install/cg2o;/path/to/cg2o/install/externals/g2o/Release"
+```
+
+### 5. Examples
+
+```bash
+cmake -S . -B build -DCG2O_BUILD_EXAMPLES=ON -DUSE_G2O_SOLVERS=ON -DCG2O_BUILD_EIGEN_SOLVERS=ON
+cmake --build build -j"$(nproc)"
+./build/cg2o/examples/example_1 150 0 0
+./build/cg2o/examples/example_2
+./build/cg2o/examples/example_3
+```
+
+The optimizer of each example can be chosen at configure time, e.g. `-DEXAMPLE_1_OPTIMIZER=ISPD`,
+`-DEXAMPLE_2_OPTIMIZER=AL`, `-DEXAMPLE_3_OPTIMIZER=BIPM`.
+
+---
+
+## Minimal example
 
 ```cpp
-cg2o::SparseOptimizerISPD optimizer;   // Recommended
-cg2o::SparseOptimizerBIPM optimizer;   // Barrier IPM
-cg2o::SparseOptimizerAL optimizer;     // Augmented Lagrangian
+cg2o::SparseOptimizerISPD optimizer;     // or SparseOptimizerBIPM / SparseOptimizerAL
+
+optimizer.addVertex(v);                  // g2o vertices
+optimizer.addEdge(cost_edge);            // g2o cost edges
+optimizer.addEdgeEq(eq_edge);            // cg2o::BaseFixedSizedEdgeEq   : h(x) = 0
+optimizer.addEdgeIneq(ineq_edge);        // cg2o::BaseFixedSizedEdgeIneq : g(x) <= 0
+
+optimizer.initializeOptimization();
+optimizer.optimize(50);
 ```
-
----
-
-## Supported Constraints
-
-### Equality Constraints
-
-```math
-h(x)=0
-```
-
-Examples:
-
-- system dynamics
-- kinematic constraints
-- calibration constraints
-
-### Inequality Constraints
-
-```math
-g(x)\le 0
-```
-
-Examples:
-
-- actuator limits
-- collision avoidance
-- speed bounds
-- safety distances
-
----
-
-## Applications
-
-### Robotics
-
-- SLAM with hard constraints
-- Trajectory optimization
-- Multi-robot systems
-- Motion planning
-
-### Control
-
-- Nonlinear MPC
-- Autonomous driving
-- Drone control
-- Energy management
 
 ---
 
 ## Build with Docker
 
-### Build Image
+### Build the image
 
 ```bash
 docker build \
@@ -133,41 +186,30 @@ docker build \
   -f ./docker/Dockerfile .
 ```
 
-### Run Container
-To start the Docker container, use the provided helper script:
+### Run the container
 
 ```bash
 ./scripts/runDocker.sh
 ```
-This script automatically applies the required workspace mounting, display forwarding, and user permission settings.
-Alternatively, the container can be started manually using:
+
+The script mounts the workspace, forwards the display and sets the user permissions. Manually:
 
 ```bash
-PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
-
 docker run -it --rm \
   --name cg2o \
   --user $(id -u):$(id -g) \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   -e DISPLAY="$DISPLAY" \
-  -v "$PROJECT_ROOT:/ws" \
+  -v "$(pwd):/ws" \
   arg/cg2o
 ```
 
- ### Notes
+Run the commands from the project root. A second shell in the running container: `docker exec -it cg2o bash`.
 
-- Run the command from the project root directory.
-- To open an additional Bash session inside the already running Docker container, from **another terminal on your host machine**,  use:
- 
-```bash
-docker exec -it cg2o bash
-```
-
-## Build Library + Examples
+Inside the container, build the library and the examples:
 
 ```bash
 mkdir -p /ws/build && cd /ws/build && \
-rm -rf CMakeFiles && rm -f CMakeCache.txt && \
 cmake \
   -DCG2O_BUILD_EXAMPLES=ON \
   -DUSE_G2O_SOLVERS=ON \
@@ -180,116 +222,56 @@ cmake \
 make -j$(nproc)
 ```
 
- 
-### To run the examples
-
-After building, you can run the example executables directly from the build directory:
-
-```bash
-/ws/build/cg2o/examples/example_1 150 0 0
-/ws/build/cg2o/examples/example_2
-/ws/build/cg2o/examples/example_3
-```
 ---
 
- 
-## Standalone MPC Project
+## Adaptive cruise control application
 
-In addition to the built-in cg2o examples, this repository also provides a standalone MPC application located in:
+`app/adaptive_cruise_control/cpp_code` is a standalone MPC application that uses the installed library. (The
+reproduction of the paper's MACC results is the separate [MACC benchmark](MACC_BENCHMARK_URL) repository.)
 
-```bash
-app/adaptive_cruise_control/cpp_code
-```
+With ISPD (recommended):
 
-This project is independent from the library examples and demonstrates how cg2o can be used in a separate application after the library has been built and installed.
-
-It is also the application used to generate the MPC results reported in the paper.
-
-### Build the MPC example with ISPD (default recommended mode)
-
-This is the recommended configuration and corresponds to the main proposed solver in the paper.
-
- 
 ```bash
 cd /ws/app/adaptive_cruise_control/cpp_code && \
 mkdir -p build && cd build && \
-rm -rf CMakeFiles && rm -f CMakeCache.txt && \
-cmake  \
+cmake \
   -DMPC_FEASIBLE_INITIALIZATION=OFF \
   -DMPC_CG2O_OPTIMIZER=ISPD \
   -DMPC_USE_NUMERICAL_JACOBIANS=OFF \
   -DCG2O_DEBUG_LINEAR_SOLVER=OFF \
   .. && \
 make -j$(nproc)
-```
-
-
-### Run the Standalone MPC Project
-
-```bash
 /ws/app/adaptive_cruise_control/cpp_code/results/data/mpc_g2o_exc
 ```
 
-
-### MPC and Solver Configuration
-To change controller parameters, solver settings, or scenario values, modify:
+With the barrier method (BIPM), which needs a feasible initialization:
 
 ```bash
-/ws/app/adaptive_cruise_control/cpp_code/config/config.yaml
-```
-
-
-### Build the MPC example with BIPM
-
-If you want to run the MPC application with the **feasible-start Barrier Interior Point Method (BIPM)** instead of the default **ISPD** solver, configure the build as follows.
-
-This mode requires: feasible initialization of the MPC problem
- 
-
-```bash
-cd /ws/app/adaptive_cruise_control/cpp_code && \
-mkdir -p build && cd build && \
-rm -rf CMakeFiles && rm -f CMakeCache.txt && \
 cmake .. \
   -DMPC_FEASIBLE_INITIALIZATION=ON \
   -DMPC_CG2O_OPTIMIZER=BIPM \
   -DMPC_USE_NUMERICAL_JACOBIANS=OFF \
-  -DCG2O_DEBUG_LINEAR_SOLVER=OFF \
-  .. && \
+  -DCG2O_DEBUG_LINEAR_SOLVER=OFF && \
 make -j$(nproc)
 ```
 
-### Run the example 
+Controller, solver and scenario settings: `app/adaptive_cruise_control/cpp_code/config/config.yaml`.
 
-To run the example use the following terminal command:
-
-```bash
-/ws/app/adaptive_cruise_control/cpp_code/results/data/mpc_g2o_exc
-```
- 
 ---
 
-## ROS2 Package
+## ROS 2 package
 
-The repository also includes a ROS2 workspace that demonstrates how cg2o can be integrated into robotics software pipelines for real-time control and action-based applications.
-
-The provided example contains an Adaptive Cruise Control (ACC) MPC node implemented with cg2o.
-
-This package serves as a practical reference for integrating cg2o into ROS2-based robotic systems.
-
-### Build the ROS2 Workspace
-
-Before building, source your ROS2 installation and compile the workspace using `colcon`:
+`app/adaptive_cruise_control/ros_ws` contains an adaptive cruise control MPC node implemented with cg2o, as a
+reference for integrating cg2o into ROS 2.
 
 ```bash
 source /opt/ros/jazzy/setup.bash && \
 cd /ws/app/adaptive_cruise_control/ros_ws && \
-sudo rm -rf build install log && \
+rm -rf build install log && \
 colcon build
 ```
 
-### Run the Test
-After building, source the workspace and run the ROS2 node together with a test action goal using the following one-line command:
+Run the node and send a test goal:
 
 ```bash
 bash -lc '
@@ -299,8 +281,6 @@ ros2 run acc_control_mpc_g2o acc_control_mpc_g2o_ros \
     --ros-args \
     -p numberOfIterations:=40 \
     -p horizon_length:=3 &
-
-SERVER_PID=$!
 
 until ros2 action list -t | grep -q "/acc_control_mpc_g2o_action.*acc_interfaces/action/AccControlMPC"; do
     sleep 0.5
@@ -314,81 +294,17 @@ ros2 action send_goal \
 pkill -INT -f acc_control_mpc_g2o_ros
 '
 ```
- ### Notes
 
-- `numberOfIterations` specifies the maximum number of optimizer iterations.
-- `horizon_length` specifies the MPC prediction horizon.
-- The command starts the ROS2 node, waits briefly for initialization, sends a test action goal, and then terminates the node automatically.
+`numberOfIterations` is the iteration limit of the optimizer, `horizon_length` the MPC horizon.
 
----
-
-## Sparse Linear Solvers
-
-Supports:
-
-- CHOLMOD
-- CSparse
-- Eigen Sparse Solver*
-- UMFPACK LU*
-- PARDISO LU*
-
-- * Useful for constrained KKT systems.
-
----
-
-## Debugging
-
-Enable:
-
-```bash
--DCG2O_DEBUG_LINEAR_SOLVER=ON
-```
-
-Exports linear systems to text files.
-
----
-
-## Minimal Example
-
-```cpp
-cg2o::SparseOptimizerISPD optimizer;
-
-optimizer.addVertex(...);
-optimizer.addEdge(...);
-optimizer.addEdgeEq(...);
-optimizer.addEdgeIneq(...);
-
-optimizer.initializeOptimization();
-optimizer.optimize(50);
-```
-
----
-
-# 
 ---
 
 ## Citation
 
 ```bibtex
 @article{cg2o2026,
-  title={cg2o: A Constrained Factor Graph Solver via the Infeasible Start Interior Point Method for Nonlinear MPC},
-  journal={},
-  year={ }
+  title   = {cg2o: Constrained Factor Graph Optimization via an Infeasible-Start Primal--Dual Interior-Point Method},
+  journal = {},
+  year    = {2026}
 }
 ```
-
----
-
- 
----
-
-## Final Note
-
-If your problem has:
-
-- sparse structure
-- nonlinear constraints
-- real-time requirements
-- graph structure
-
-then **cg2o** was built for it.
