@@ -21,8 +21,8 @@ This repository contains the library of the paper
   It is also available on Google Drive:
   [Experiment Video](https://drive.google.com/file/d/1D5Szbq0rx6m6J8egvvjbGFpykSk1dnAy/view)
   (the link printed in the paper may not open; use this one).
-* **Quadrotor benchmark (paper, Sec. VII).** *Coming soon:* the code of the quadrotor MPC benchmark (PX4
-  software-in-the-loop flights) will be linked here: **QUADROTOR_BENCHMARK_URL**. Its videos will be placed in
+* **Quadrotor benchmark (paper, Sec. VII).** the code of the quadrotor MPC benchmark (PX4
+  software-in-the-loop flights) will be linked here: **[QUADROTOR_BENCHMARK_URL]{https://anonymous.4open.science/r/cg2o-quadrotor-benchmark-FCC4/README.md}**. Its videos will be placed in
   [`videos/`](videos/).
 
 ---
